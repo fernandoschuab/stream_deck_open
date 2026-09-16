@@ -33,7 +33,9 @@
 		autoLang: null,
 		gotGlobal: false,
 		gotEnv: false,
+		platform: /win/i.test(navigator.platform || navigator.userAgent || "") ? "windows" : "mac",
 	};
+	const isWin = () => state.platform === "windows";
 
 	/* ------------------------------------------------------------ i18n */
 	const DICT = window.OW_I18N || {};
@@ -52,7 +54,11 @@
 		document.documentElement.lang = state.lang === "pt" ? "pt-BR" : state.lang;
 		document.querySelectorAll("[data-i18n]").forEach((n) => (n.textContent = t(n.dataset.i18n)));
 		document.querySelectorAll("[data-i18n-html]").forEach((n) => (n.innerHTML = t(n.dataset.i18nHtml)));
-		document.querySelectorAll("[data-i18n-ph]").forEach((n) => (n.placeholder = t(n.dataset.i18nPh)));
+		document.querySelectorAll("[data-i18n-ph]").forEach((n) => {
+			const k = n.dataset.i18nPh;
+			n.placeholder = t(isWin() && k === "pathPh" ? "pathPhWin" : k);
+		});
+		document.body.classList.toggle("platform-windows", isWin());
 		document.querySelectorAll("[data-i18n-title]").forEach((n) => (n.title = t(n.dataset.i18nTitle)));
 		const sel = $("langSel");
 		if (sel) {
@@ -98,6 +104,8 @@
 		try {
 			const inf = typeof info === "string" ? JSON.parse(info) : info;
 			state.lang = state.autoLang = guessLang(inf && inf.application && inf.application.language);
+			const plat = inf && inf.application && inf.application.platform;
+			if (plat) state.platform = /win/i.test(plat) ? "windows" : "mac";
 		} catch (e) { /* ignore */ }
 		try {
 			const ai = typeof actionInfo === "string" ? JSON.parse(actionInfo) : actionInfo;
@@ -167,6 +175,7 @@
 			case "env":
 				state.home = p.home || "";
 				state.gotEnv = true;
+				if (p.platform) state.platform = p.platform === "windows" ? "windows" : "mac";
 				if (p.autoLang) {
 					state.autoLang = toLang(p.autoLang) || state.autoLang;
 					cacheAutoLang(state.autoLang);
@@ -218,13 +227,26 @@
 
 	/* ------------------------------------------------------------ util de exibição */
 	function tilde(p) {
-		if (state.home && (p === state.home || p.startsWith(state.home + "/"))) return "~" + p.slice(state.home.length);
+		const h = state.home;
+		if (!h) return p;
+		if (isWin()) {
+			const lp = p.toLowerCase();
+			const lh = h.toLowerCase();
+			if (lp === lh || lp.startsWith(lh + "\\")) return "~" + p.slice(h.length);
+			return p;
+		}
+		if (p === h || p.startsWith(h + "/")) return "~" + p.slice(h.length);
 		return p;
 	}
+	const isRoot = (p) => p === "/" || /^[A-Za-z]:[\\/]?$/.test(p) || /^\\\\[^\\]+\\[^\\]+\\?$/.test(p);
 	function splitPath(p) {
-		const clean = p.length > 1 ? p.replace(/\/+$/, "") : p;
-		const i = clean.lastIndexOf("/");
-		return { name: i >= 0 ? clean.slice(i + 1) || clean : clean, dir: i > 0 ? clean.slice(0, i) : "/" };
+		const clean = isRoot(p) ? p : p.replace(/[\\/]+$/, "");
+		const i = Math.max(clean.lastIndexOf("/"), clean.lastIndexOf("\\"));
+		if (i < 0 || isRoot(clean)) return { name: clean, dir: "" };
+		let dir = clean.slice(0, i);
+		if (!dir) dir = clean.charAt(0) === "\\" ? "\\" : "/";
+		else if (/^[A-Za-z]:$/.test(dir)) dir += "\\";
+		return { name: clean.slice(i + 1) || clean, dir };
 	}
 	function hue(name) {
 		let h = 0;
@@ -350,7 +372,7 @@
 			ico.appendChild(iconNode(a));
 			li.appendChild(ico);
 			li.appendChild(el("span", "nm", highlight(a.name)));
-			if (a.electron) li.appendChild(el("span", "tag", "Electron"));
+			if (a.electron && !isWin()) li.appendChild(el("span", "tag", "Electron"));
 			li.appendChild(el("span", "check", '<svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>'));
 			li.title = a.path;
 			li.addEventListener("mousemove", () => setActive(i, false));
@@ -396,8 +418,8 @@
 		s.appPath = app.path;
 		s.appName = app.name;
 		if (changed) {
-			s.newInstance = !!app.electron;
-			state.niAuto = true;
+			s.newInstance = isWin() ? false : !!app.electron;
+			state.niAuto = !isWin();
 		}
 		save(true);
 		closePop(true);
@@ -407,10 +429,23 @@
 
 	/* ------------------------------------------------------------ caminhos */
 	function cleanPath(p) {
-		let out = String(p).trim().replace(/^["']|["']$/g, "").replace(/\\ /g, " ");
-		if (out.startsWith("file://")) {
-			try { out = decodeURIComponent(new URL(out).pathname); } catch { /* ignore */ }
+		let out = String(p).trim().replace(/^["']|["']$/g, "");
+		if (/^file:\/\//i.test(out)) {
+			try {
+				const u = new URL(out);
+				out = decodeURIComponent(u.pathname);
+				if (isWin()) {
+					out = out.replace(/^\/([A-Za-z]:)/, "$1").replace(/\//g, "\\");
+					if (u.host) out = "\\\\" + u.host + out;
+				}
+			} catch (e) { /* ignore */ }
 		}
+		if (isWin()) {
+			out = out.replace(/\//g, "\\");
+			if (!isRoot(out)) out = out.replace(/\\+$/, "");
+			return out;
+		}
+		out = out.replace(/\\ /g, " "); // "Working\ Files" colado do Terminal
 		if (out.length > 1) out = out.replace(/\/+$/, "");
 		return out;
 	}
@@ -421,7 +456,8 @@
 		let added = 0;
 		for (const raw of list) {
 			const p = cleanPath(raw);
-			if (p && !s.paths.includes(p)) {
+			const dup = s.paths.some((x) => (isWin() ? x.toLowerCase() === p.toLowerCase() : x === p));
+			if (p && !dup) {
 				s.paths.push(p);
 				added++;
 			}
@@ -546,6 +582,7 @@
 		$("delay").value = s.delay != null ? s.delay : 300;
 		$("delayOut").textContent = $("delay").value + " ms";
 		$("newInstance").checked = !!s.newInstance;
+		$("niOpt").hidden = isWin();
 		$("useAppIcon").checked = s.useAppIcon !== false;
 
 		const hint = $("niHint");
@@ -562,6 +599,11 @@
 	function shq(p) {
 		return /^[\w@%+=:,./-]+$/.test(p) ? p : "'" + p.replace(/'/g, "'\\''") + "'";
 	}
+	/** Aspas do PowerShell ('...' com '' para escapar). */
+	const psq = (p) => "'" + String(p).replace(/'/g, "''") + "'";
+	/** Argumento dentro de -ArgumentList: aspas duplas quando há espaços. */
+	const psArg = (p) => psq(/[\s"]/.test(p) ? '"' + p.replace(/"/g, '\\"') + '"' : p);
+
 	function renderPreview() {
 		const s = S();
 		const pre = $("cmdPreview");
@@ -569,20 +611,25 @@
 			pre.textContent = t("cmdNoApp");
 			return;
 		}
-		const app = shq(s.appPath);
 		const paths = (s.paths || []).filter((p) => !(state.pathStatus[p] && !state.pathStatus[p].exists));
-		const build = (ps) => (s.newInstance ? "open -n -a " + app + (ps.length ? " --args " + ps.map(shq).join(" ") : "") : "open -a " + app + (ps.length ? " " + ps.map(shq).join(" ") : ""));
-		let lines;
-		if (!paths.length) lines = [build([])];
-		else if ((s.mode || "separate") === "together" || paths.length === 1) lines = [build(paths)];
-		else {
-			const d = Number(s.delay != null ? s.delay : 300);
-			lines = [];
-			paths.forEach((p, i) => {
-				if (i && d > 0) lines.push("sleep " + d / 1000);
-				lines.push(build([p]));
-			});
+		const separate = (s.mode || "separate") !== "together" && paths.length > 1;
+		const d = Number(s.delay != null ? s.delay : 300);
+		const groups = !paths.length ? [[]] : separate ? paths.map((p) => [p]) : [paths];
+		let build;
+		let pause;
+		if (isWin()) {
+			build = (ps) => "Start-Process " + psq(s.appPath) + (ps.length ? " -ArgumentList " + ps.map(psArg).join(", ") : "");
+			pause = "Start-Sleep -Milliseconds " + d;
+		} else {
+			const app = shq(s.appPath);
+			build = (ps) => (s.newInstance ? "open -n -a " + app + (ps.length ? " --args " + ps.map(shq).join(" ") : "") : "open -a " + app + (ps.length ? " " + ps.map(shq).join(" ") : ""));
+			pause = "sleep " + d / 1000;
 		}
+		const lines = [];
+		groups.forEach((g, i) => {
+			if (i && d > 0) lines.push(pause);
+			lines.push(build(g));
+		});
 		pre.textContent = lines.join("\n");
 	}
 
@@ -609,7 +656,7 @@
 		if (!b) return;
 		b.classList.toggle("busy", on);
 		const span = b.querySelector("span");
-		if (span) span.textContent = on ? t("finderBusy") : t(span.dataset.i18n);
+		if (span) span.textContent = on ? t(isWin() ? "explorerBusy" : "finderBusy") : t(span.dataset.i18n);
 	}
 	function setTestBusy(on) {
 		const b = $("testBtn");

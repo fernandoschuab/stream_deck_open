@@ -4,7 +4,10 @@ import { WebSocketServer } from "ws";
 import path from "node:path";
 import assert from "node:assert/strict";
 
-const SDP = path.resolve("../com.fernandoschuab.openwith.sdPlugin");
+const SDP = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../com.fernandoschuab.openwith.sdPlugin");
+// E2E_PLATFORM=mac|windows força a implementação; E2E_EXPECT_LANG confere o idioma detectado.
+const PLATFORM = process.env.E2E_PLATFORM || "";
+const EXPECT = process.env.E2E_EXPECT_LANG || "";
 const UUID = "com.fernandoschuab.openwith";
 const ACTION = `${UUID}.open`;
 const wss = new WebSocketServer({ port: 0 });
@@ -38,7 +41,11 @@ const info = {
 	devices: [{ id: "DEV", name: "SD", size: { columns: 5, rows: 3 }, type: 0 }],
 	plugin: { uuid: UUID, version: "1.0.0.0" },
 };
-const child = spawn(process.execPath, ["bin/plugin.js", "-port", String(port), "-pluginUUID", UUID, "-registerEvent", "registerPlugin", "-info", JSON.stringify(info)], { cwd: SDP, stdio: ["ignore", "pipe", "pipe"] });
+const child = spawn(process.execPath, ["bin/plugin.js", "-port", String(port), "-pluginUUID", UUID, "-registerEvent", "registerPlugin", "-info", JSON.stringify(info)], {
+	cwd: SDP,
+	stdio: ["ignore", "pipe", "pipe"],
+	env: { ...process.env, ...(PLATFORM ? { OPENWITH_PLATFORM: PLATFORM } : {}) },
+});
 let stderr = "";
 child.stderr.on("data", (d) => (stderr += d));
 
@@ -55,8 +62,29 @@ try {
 	send({ event: "propertyInspectorDidAppear", action: ACTION, context: ctx, device: "DEV" });
 	const env1 = await waitFor((m) => m.event === "sendToPropertyInspector" && m.payload?.type === "env");
 	console.log("env1", env1.payload);
-	assert.equal(env1.payload.autoLang, "pt");
-	assert.equal(env1.payload.lang, "pt");
+	const auto = env1.payload.autoLang;
+	assert.ok(["pt", "en", "es"].includes(auto));
+	if (EXPECT) assert.equal(auto, EXPECT);
+	assert.equal(env1.payload.lang, auto);
+	if (PLATFORM) assert.equal(env1.payload.platform, PLATFORM);
+
+	// Lista de apps nunca deve derrubar o plugin (mesmo sem PowerShell/Applications).
+	got.length = 0;
+	send({ event: "sendToPlugin", action: ACTION, context: ctx, payload: { cmd: "listApps" } });
+	const apps = await waitFor((m) => m.event === "sendToPropertyInspector" && m.payload?.type === "apps", 60000);
+	assert.ok(Array.isArray(apps.payload.apps));
+	console.log("apps:", apps.payload.apps.length);
+
+	// Tecla sem programa configurado -> alerta, sem travar.
+	got.length = 0;
+	send({ event: "keyDown", action: ACTION, context: ctx, device: "DEV", payload: { settings: {}, coordinates: { column: 0, row: 0 }, isInMultiAction: false } });
+	await waitFor((m) => m.event === "showAlert");
+
+	// Programa inexistente -> alerta.
+	got.length = 0;
+	const badApp = PLATFORM === "windows" ? "C:\\Nao\\Existe.exe" : "/Applications/Nao Existe.app";
+	send({ event: "keyDown", action: ACTION, context: ctx, device: "DEV", payload: { settings: { appPath: badApp, paths: [] }, coordinates: { column: 0, row: 0 }, isInMultiAction: false } });
+	await waitFor((m) => m.event === "showAlert", 40000);
 
 	// 2) UI grava preferência (global) e avisa o plugin.
 	got.length = 0;
@@ -74,8 +102,8 @@ try {
 	await wait(100);
 	send({ event: "sendToPlugin", action: ACTION, context: ctx, payload: { cmd: "hello" } });
 	const env3 = await waitFor((m) => m.event === "sendToPropertyInspector" && m.payload?.type === "env");
-	assert.equal(env3.payload.lang, "pt");
-	console.log("PLUGIN E2E OK");
+	assert.equal(env3.payload.lang, auto);
+	console.log(`PLUGIN E2E OK (${PLATFORM || "native"})`);
 } catch (e) {
 	console.error(e.message, "\nstderr:", stderr);
 	process.exitCode = 1;

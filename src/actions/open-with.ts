@@ -11,19 +11,9 @@ import streamDeck, {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { type Lang, type LangPref, readSystemLanguage, resolveLang } from "../lib/i18n";
-import {
-	appNameFromPath,
-	getIcons,
-	HOME,
-	isElectron,
-	letterIcon,
-	listApps,
-	openItems,
-	pathKind,
-	pick,
-	type PickKind,
-} from "../lib/mac";
+import { letterIcon } from "../lib/common";
+import { type Lang, type LangPref, resolveLang } from "../lib/i18n";
+import { type PickKind, platform } from "../lib/platform";
 
 export type OpenSettings = {
 	appPath?: string;
@@ -109,7 +99,7 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 	private loadLanguage(): Promise<void> {
 		this.langReady ??= (async () => {
 			const [sys, g] = await Promise.all([
-				readSystemLanguage(),
+				platform.readSystemLanguage(),
 				withTimeout(streamDeck.settings.getGlobalSettings<GlobalSettings>(), 1500).catch((e) => {
 					log.warn("Could not read global settings", e);
 					return undefined;
@@ -137,7 +127,8 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 	private envPayload(): JsonValue {
 		return {
 			type: "env",
-			home: HOME,
+			home: platform.home,
+			platform: platform.id,
 			lang: this.lang,
 			langPref: this.langPref,
 			autoLang: resolveLang("auto", this.systemLang, this.sdLang),
@@ -167,7 +158,7 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 			return;
 		}
 		try {
-			const { missing, calls } = await openItems({
+			const { missing, calls } = await platform.openItems({
 				app: s.appPath,
 				paths: s.paths ?? [],
 				mode: s.mode ?? "separate",
@@ -197,8 +188,8 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 			await act.setImage();
 			return;
 		}
-		const icons = await getIcons([s.appPath!], 144);
-		const img = icons[s.appPath!] ?? letterIcon(s.appName || appNameFromPath(s.appPath!));
+		const icons = await platform.getIcons([s.appPath!], 144);
+		const img = icons[s.appPath!] ?? letterIcon(s.appName || platform.appNameFromPath(s.appPath!));
 		// Confere se as configurações não mudaram enquanto o ícone era gerado.
 		if (this.appliedImage.get(act.id) === key) await act.setImage(img);
 	}
@@ -224,9 +215,10 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 				}
 
 				case "listApps": {
-					const apps = await listApps(!!msg.force);
+					await this.loadLanguage();
+					const apps = await platform.listApps(!!msg.force, this.lang);
 					await send({ type: "apps", apps });
-					void getIcons(
+					void platform.getIcons(
 						apps.map((a) => a.path),
 						64,
 						(icons) => send({ type: "icons", icons }),
@@ -235,10 +227,10 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 				}
 
 				case "appInfo": {
-					const icons = await getIcons([msg.appPath], 64);
+					const icons = await platform.getIcons([msg.appPath], 64);
 					await send({
 						type: "appInfo",
-						app: { name: appNameFromPath(msg.appPath), path: msg.appPath, electron: isElectron(msg.appPath) },
+						app: { name: platform.appNameFromPath(msg.appPath), path: msg.appPath, electron: platform.isElectron(msg.appPath) },
 						icon: icons[msg.appPath] ?? null,
 					});
 					break;
@@ -246,12 +238,17 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 
 				case "pick": {
 					await this.loadLanguage();
-					const paths = await pick(msg.kind, msg.multiple ?? true, msg.defaultLocation, this.lang);
+					const { paths, names } = await platform.pick(msg.kind, msg.multiple ?? true, msg.defaultLocation, this.lang);
 					const payload: Record<string, JsonValue> = { type: "picked", kind: msg.kind, paths, reqId: msg.reqId ?? null };
 					if (msg.kind === "app" && paths[0]) {
-						const icons = await getIcons([paths[0]], 64);
-						payload.app = { name: appNameFromPath(paths[0]), path: paths[0], electron: isElectron(paths[0]) };
-						payload.icon = icons[paths[0]] ?? null;
+						const app = paths[0];
+						const icons = await platform.getIcons([app], 64);
+						payload.app = {
+							name: names?.[app] || platform.appNameFromPath(app),
+							path: app,
+							electron: platform.isElectron(app),
+						};
+						payload.icon = icons[app] ?? null;
 					}
 					await send(payload);
 					break;
@@ -259,7 +256,7 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 
 				case "checkPaths": {
 					const status: Record<string, { exists: boolean; dir: boolean }> = {};
-					for (const p of msg.paths ?? []) status[p] = pathKind(p);
+					for (const p of msg.paths ?? []) status[p] = platform.pathKind(p);
 					await send({ type: "pathStatus", status });
 					break;
 				}

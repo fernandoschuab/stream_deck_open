@@ -1,14 +1,15 @@
 {
     "name": "streamdeck-abrir-com",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "private": true,
-    "description": "Stream Deck plugin (macOS): abre uma ou várias pastas/arquivos no programa escolhido.",
+    "description": "Stream Deck plugin (macOS e Windows): abre uma ou várias pastas/arquivos no programa escolhido.",
     "scripts": {
         "build": "rollup -c",
         "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.fernandoschuab.openwith\"",
         "link": "streamdeck link com.fernandoschuab.openwith.sdPlugin",
         "validate": "streamdeck validate com.fernandoschuab.openwith.sdPlugin",
-        "pack": "npm run build && streamdeck pack com.fernandoschuab.openwith.sdPlugin --output dist --force"
+        "pack": "npm run build && streamdeck pack com.fernandoschuab.openwith.sdPlugin --output dist --force",
+        "test": "python3 test/pi_test.py && python3 test/pi_test_win.py && node test/run-node-tests.mjs"
     },
     "type": "module",
     "devDependencies": {

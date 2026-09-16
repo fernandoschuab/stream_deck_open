@@ -1,7 +1,7 @@
 {
 	"Name": "Open With",
 	"Category": "Open With",
-	"Description": "Open one or more folders/files in the app of your choice (VS Code, Cursor, Antigravity, Finder…), no Terminal needed.",
+	"Description": "Open one or more folders/files in the app of your choice (VS Code, Cursor, Antigravity, Finder, File Explorer…) on macOS and Windows — no Terminal needed.",
 	"com.fernandoschuab.openwith.open": {
 		"Name": "Open folders in…",
 		"Tooltip": "Opens one or more folders/files in the chosen app."

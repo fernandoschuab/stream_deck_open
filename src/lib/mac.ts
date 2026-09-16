@@ -1,50 +1,32 @@
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, promises as fs, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { type Lang, tr } from "./i18n";
+import { createIconCache, type IconJob, readDataUrl, run, SCRIPTS_DIR, sleep } from "./common";
+import { tr } from "./i18n";
+import type { AppInfo, OpenOptions, PickKind, Platform } from "./types";
 
-/** Pasta raiz do plugin (…/com.fernandoschuab.openwith.sdPlugin). */
-const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SCRIPTS_DIR = path.join(PLUGIN_DIR, "scripts");
-const ICON_CACHE = path.join(os.homedir(), "Library", "Caches", "com.fernandoschuab.openwith", "icons");
+/** Implementação macOS: `open`, seletores JXA, /Applications e ícones via NSWorkspace. */
 
-export const HOME = os.homedir();
+const HOME = os.homedir();
+const MAC_SCRIPTS = SCRIPTS_DIR; // pick.js e icons.js ficam na raiz de scripts/
+const ICON_CACHE = path.join(HOME, "Library", "Caches", "com.fernandoschuab.openwith", "icons");
 
-export type AppInfo = { name: string; path: string; electron: boolean };
-
-function run(file: string, args: string[], timeoutMs = 0): Promise<string> {
-	return new Promise((resolve, reject) => {
-		execFile(file, args, { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
-			if (err) reject(Object.assign(err, { stderr: String(stderr) }));
-			else resolve(String(stdout));
-		});
-	});
-}
-
-export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Expande "~" e remove barra final. */
+/** Expande "~", aceita "Working\ Files" colado do Terminal e remove barra final. */
 export function normalizePath(p: string): string {
 	let out = p.trim().replace(/^["']|["']$/g, "");
+	if (/^file:\/\//i.test(out)) {
+		try {
+			out = decodeURIComponent(new URL(out).pathname);
+		} catch {
+			/* ignore */
+		}
+	}
 	if (out === "~") out = HOME;
-	else if (out.startsWith("~/")) out = path.join(HOME, out.slice(2));
-	// Aceita caminhos colados do Terminal com espaços escapados ("Working\ Files").
+	else if (out.startsWith("~/")) out = path.posix.join(HOME, out.slice(2));
 	out = out.replace(/\\ /g, " ");
 	if (out.length > 1) out = out.replace(/\/+$/, "");
 	return out;
-}
-
-export function pathKind(p: string): { exists: boolean; dir: boolean } {
-	try {
-		const st = statSync(normalizePath(p));
-		return { exists: true, dir: st.isDirectory() && !/\.app$/i.test(p) };
-	} catch {
-		return { exists: false, dir: false };
-	}
 }
 
 export function isElectron(appPath: string): boolean {
@@ -55,18 +37,6 @@ export function appNameFromPath(appPath: string): string {
 	return path.basename(appPath).replace(/\.app$/i, "");
 }
 
-/* ------------------------------------------------------------------ */
-/* Abrir                                                               */
-/* ------------------------------------------------------------------ */
-
-export type OpenOptions = {
-	app: string;
-	paths: string[];
-	mode: "separate" | "together";
-	newInstance: boolean;
-	delay: number;
-};
-
 /** Monta os argumentos do `open` para um conjunto de caminhos. */
 export function buildOpenArgs(app: string, paths: string[], newInstance: boolean): string[] {
 	const appArg = ["-a", app];
@@ -76,8 +46,7 @@ export function buildOpenArgs(app: string, paths: string[], newInstance: boolean
 	return [...appArg, ...paths];
 }
 
-/** Executa os `open` em sequência. Retorna os caminhos que não existem (ignorados). */
-export async function openItems(opts: OpenOptions): Promise<{ missing: string[]; calls: string[][] }> {
+async function openItems(opts: OpenOptions) {
 	const all = opts.paths.map(normalizePath).filter(Boolean);
 	const existing = all.filter((p) => existsSync(p));
 	const missing = all.filter((p) => !existsSync(p));
@@ -101,15 +70,9 @@ export async function openItems(opts: OpenOptions): Promise<{ missing: string[];
 	return { missing, calls };
 }
 
-/* ------------------------------------------------------------------ */
-/* Seletores nativos (Finder)                                          */
-/* ------------------------------------------------------------------ */
-
-export type PickKind = "folder" | "file" | "app";
 let picking = false;
-
-export async function pick(kind: PickKind, multiple: boolean, defaultLocation?: string, lang: Lang = "en"): Promise<string[]> {
-	if (picking) return [];
+async function pick(kind: PickKind, multiple: boolean, defaultLocation: string | undefined, lang: Parameters<typeof tr>[0]) {
+	if (picking) return { paths: [] };
 	picking = true;
 	try {
 		const prompts: Record<PickKind, string> = {
@@ -121,26 +84,16 @@ export async function pick(kind: PickKind, multiple: boolean, defaultLocation?: 
 		if (loc && existsSync(loc) && !statSync(loc).isDirectory()) loc = path.dirname(loc);
 		if (loc && !existsSync(loc)) loc = undefined;
 		const arg = JSON.stringify({ kind, multiple, prompt: prompts[kind], defaultLocation: loc });
-		const out = await run("/usr/bin/osascript", ["-l", "JavaScript", path.join(SCRIPTS_DIR, "pick.js"), arg]);
+		const out = await run("/usr/bin/osascript", ["-l", "JavaScript", path.join(MAC_SCRIPTS, "pick.js"), arg]);
 		const res = JSON.parse(out.trim()) as { ok: boolean; paths?: string[]; error?: string };
 		if (!res.ok) throw new Error(res.error ?? "Picker failed");
-		return (res.paths ?? []).map(normalizePath);
+		return { paths: (res.paths ?? []).map(normalizePath) };
 	} finally {
 		picking = false;
 	}
 }
 
-/* ------------------------------------------------------------------ */
-/* Lista de apps                                                       */
-/* ------------------------------------------------------------------ */
-
-const APP_ROOTS = [
-	"/Applications",
-	path.join(HOME, "Applications"),
-	"/System/Applications",
-	"/System/Applications/Utilities",
-	"/System/Library/CoreServices/Finder.app/..",
-];
+const APP_ROOTS = ["/Applications", path.join(HOME, "Applications"), "/System/Applications", "/System/Applications/Utilities"];
 
 async function scanDir(dir: string, depth: number, found: Map<string, AppInfo>): Promise<void> {
 	let entries: import("node:fs").Dirent[];
@@ -162,136 +115,72 @@ async function scanDir(dir: string, depth: number, found: Map<string, AppInfo>):
 }
 
 let appsCache: { at: number; apps: AppInfo[] } | undefined;
-
-export async function listApps(force = false): Promise<AppInfo[]> {
+async function listApps(force: boolean): Promise<AppInfo[]> {
 	if (!force && appsCache && Date.now() - appsCache.at < 60_000) return appsCache.apps;
 	const found = new Map<string, AppInfo>();
-	for (const root of APP_ROOTS) {
-		const r = path.resolve(root);
-		// Da pasta CoreServices só interessa o Finder.
-		if (r === "/System/Library/CoreServices") {
-			const finder = path.join(r, "Finder.app");
-			if (existsSync(finder)) found.set("finder", { name: "Finder", path: finder, electron: false });
-			continue;
-		}
-		await scanDir(r, r === "/Applications" ? 2 : 1, found);
-	}
-	const apps = [...found.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }));
+	const finder = "/System/Library/CoreServices/Finder.app";
+	if (existsSync(finder)) found.set("finder", { name: "Finder", path: finder, electron: false });
+	for (const root of APP_ROOTS) await scanDir(root, root === "/Applications" ? 2 : 1, found);
+	const apps = [...found.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 	appsCache = { at: Date.now(), apps };
 	return apps;
 }
 
-/* ------------------------------------------------------------------ */
-/* Ícones                                                              */
-/* ------------------------------------------------------------------ */
-
-const iconMem = new Map<string, string>();
-
-function iconFile(appPath: string, size: number): string {
-	let mtime = 0;
-	try {
-		mtime = statSync(appPath).mtimeMs;
-	} catch {
-		/* ignore */
-	}
-	const key = createHash("sha1").update(`${appPath}|${mtime}|${size}`).digest("hex");
-	return path.join(ICON_CACHE, `${key}.png`);
-}
-
-async function readDataUrl(file: string): Promise<string | undefined> {
-	try {
-		const buf = await fs.readFile(file);
-		if (buf.length < 100) return undefined;
-		return `data:image/png;base64,${buf.toString("base64")}`;
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * Gera (com cache em disco e memória) ícones PNG dos apps via NSWorkspace.
- * `onBatch` é chamado a cada lote pronto.
- */
-export async function getIcons(
-	appPaths: string[],
-	size: number,
-	onBatch?: (icons: Record<string, string>) => void | Promise<void>,
-): Promise<Record<string, string>> {
-	await fs.mkdir(ICON_CACHE, { recursive: true });
-	const result: Record<string, string> = {};
-	const ready: Record<string, string> = {};
-	const todo: { app: string; out: string }[] = [];
-
-	for (const app of appPaths) {
-		const out = iconFile(app, size);
-		const memKey = out;
-		const mem = iconMem.get(memKey);
-		if (mem) {
-			ready[app] = mem;
-			continue;
-		}
-		const disk = existsSync(out) ? await readDataUrl(out) : undefined;
-		if (disk) {
-			iconMem.set(memKey, disk);
-			ready[app] = disk;
-		} else if (existsSync(app)) {
-			todo.push({ app, out });
-		}
-	}
-	Object.assign(result, ready);
-	if (Object.keys(ready).length && onBatch) await onBatch(ready);
-
-	const CHUNK = 24;
-	for (let i = 0; i < todo.length; i += CHUNK) {
-		const chunk = todo.slice(i, i + CHUNK);
-		try {
-			await run(
-				"/usr/bin/osascript",
-				["-l", "JavaScript", path.join(SCRIPTS_DIR, "icons.js"), JSON.stringify(chunk.map((c) => ({ ...c, size })))],
-				60_000,
-			);
-		} catch {
-			/* segue para o fallback abaixo */
-		}
-		const batch: Record<string, string> = {};
-		for (const c of chunk) {
-			let data = await readDataUrl(c.out);
-			if (!data) data = await sipsFallback(c.app, c.out, size);
-			if (data) {
-				iconMem.set(c.out, data);
-				batch[c.app] = data;
-			}
-		}
-		Object.assign(result, batch);
-		if (Object.keys(batch).length && onBatch) await onBatch(batch);
-	}
-	return result;
-}
-
 /** Fallback: converte o .icns do bundle com `sips`. */
-async function sipsFallback(appPath: string, out: string, size: number): Promise<string | undefined> {
+async function sipsFallback(job: IconJob): Promise<void> {
 	try {
-		const plist = path.join(appPath, "Contents", "Info.plist");
+		const plist = path.join(job.app, "Contents", "Info.plist");
 		let iconName = (await run("/usr/bin/plutil", ["-extract", "CFBundleIconFile", "raw", "-o", "-", plist], 5000)).trim();
-		if (!iconName) return undefined;
+		if (!iconName) return;
 		if (!iconName.toLowerCase().endsWith(".icns")) iconName += ".icns";
-		const icns = path.join(appPath, "Contents", "Resources", iconName);
-		if (!existsSync(icns)) return undefined;
-		await run("/usr/bin/sips", ["-s", "format", "png", "-Z", String(size), icns, "--out", out], 10_000);
-		return await readDataUrl(out);
+		const icns = path.join(job.app, "Contents", "Resources", iconName);
+		if (!existsSync(icns)) return;
+		await run("/usr/bin/sips", ["-s", "format", "png", "-Z", String(job.size), icns, "--out", job.out], 10_000);
+	} catch {
+		/* sem ícone */
+	}
+}
+
+const getIcons = createIconCache(ICON_CACHE, async (jobs) => {
+	try {
+		await run("/usr/bin/osascript", ["-l", "JavaScript", path.join(MAC_SCRIPTS, "icons.js"), JSON.stringify(jobs)], 60_000);
+	} catch {
+		/* cai no fallback */
+	}
+	for (const j of jobs) if (!(await readDataUrl(j.out))) await sipsFallback(j);
+});
+
+/** Idioma principal do macOS (defaults read -g AppleLanguages). */
+export function parseAppleLanguages(stdout: string): string | undefined {
+	const m = /"?([A-Za-z]{2,3}(?:[-_][A-Za-z0-9]+)*)"?/.exec(String(stdout).replace(/[()\s,]+/g, " "));
+	return m?.[1];
+}
+
+async function readSystemLanguage(): Promise<string | undefined> {
+	try {
+		return parseAppleLanguages(await run("/usr/bin/defaults", ["read", "-g", "AppleLanguages"], 3000));
 	} catch {
 		return undefined;
 	}
 }
 
-/** Ícone genérico (SVG) com a inicial do app, usado quando não há ícone. */
-export function letterIcon(name: string, size = 144): string {
-	const letter = (name.trim()[0] ?? "?").toUpperCase();
-	let h = 0;
-	for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
-	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 144 144">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h},70%,58%)"/><stop offset="1" stop-color="hsl(${(h + 40) % 360},70%,42%)"/></linearGradient></defs>
-<rect x="16" y="16" width="112" height="112" rx="26" fill="url(#g)"/>
-<text x="72" y="92" font-family="-apple-system,Helvetica,Arial" font-size="56" font-weight="600" text-anchor="middle" fill="#fff">${letter.replace(/[<&>]/g, "")}</text></svg>`;
-	return `data:image/svg+xml;charset=utf8,${encodeURIComponent(svg)}`;
-}
+export const macPlatform: Platform = {
+	id: "mac",
+	home: HOME,
+	normalizePath,
+	pathKind(p) {
+		try {
+			const st = statSync(normalizePath(p));
+			return { exists: true, dir: st.isDirectory() && !/\.app$/i.test(p) };
+		} catch {
+			return { exists: false, dir: false };
+		}
+	},
+	isElectron,
+	appNameFromPath,
+	openItems,
+	pick,
+	listApps: (force) => listApps(force),
+	getIcons,
+	readSystemLanguage,
+};

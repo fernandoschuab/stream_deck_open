@@ -1,6 +1,6 @@
 {
 	"Name": "Open With",
-	"Version": "1.0.0.0",
+	"Version": "1.1.0.0",
 	"Author": "Fernando Schuab",
 	"Actions": [
 		{
@@ -25,7 +25,7 @@
 	"Category": "Open With",
 	"CategoryIcon": "imgs/plugin/category-icon",
 	"CodePath": "bin/plugin.js",
-	"Description": "Open one or more folders/files in the app of your choice (VS Code, Cursor, Antigravity, Finder…), no Terminal needed.",
+	"Description": "Open one or more folders/files in the app of your choice (VS Code, Cursor, Antigravity, Finder, File Explorer…) on macOS and Windows — no Terminal needed.",
 	"Icon": "imgs/plugin/marketplace",
 	"SDKVersion": 3,
 	"Software": {
@@ -35,6 +35,10 @@
 		{
 			"Platform": "mac",
 			"MinimumVersion": "12"
+		},
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
 		}
 	],
 	"Nodejs": {
