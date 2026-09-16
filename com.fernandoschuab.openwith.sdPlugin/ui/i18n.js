@@ -49,6 +49,7 @@ window.OW_I18N = {
 		finderBusy: "Finder…",
 		explorerBusy: "Explorador…",
 		dropFail: "Não deu para ler o caminho — use o botão Pastas",
+		noPlugin: "O plugin não respondeu. Selecione outra tecla e volte a esta.",
 	},
 	en: {
 		langName: "English",
@@ -99,6 +100,7 @@ window.OW_I18N = {
 		finderBusy: "Finder…",
 		explorerBusy: "Explorer…",
 		dropFail: "Couldn’t read the path — use the Folders button",
+		noPlugin: "The plugin did not respond. Select another key and then this one again.",
 	},
 	es: {
 		langName: "Español",
@@ -149,5 +151,6 @@ window.OW_I18N = {
 		finderBusy: "Finder…",
 		explorerBusy: "Explorador…",
 		dropFail: "No se pudo leer la ruta — usa el botón Carpetas",
+		noPlugin: "El plugin no respondió. Selecciona otra tecla y vuelve a esta.",
 	},
 };

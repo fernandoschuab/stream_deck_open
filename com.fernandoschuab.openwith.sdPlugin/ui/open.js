@@ -96,6 +96,12 @@
 	}
 
 	const DEFAULTS = { paths: [], mode: "separate", newInstance: false, delay: 300, useAppIcon: true };
+	/** Configurações da tecla com os padrões (cópia profunda: nada compartilhado entre leituras). */
+	const withDefaults = (s) => {
+		const out = Object.assign({}, DEFAULTS, JSON.parse(JSON.stringify(s || {})));
+		out.paths = Array.isArray(out.paths) ? out.paths.filter((p) => typeof p === "string") : [];
+		return out;
+	};
 	const S = () => state.settings;
 
 	/* ------------------------------------------------------------ conexão */
@@ -110,9 +116,9 @@
 		try {
 			const ai = typeof actionInfo === "string" ? JSON.parse(actionInfo) : actionInfo;
 			actionUUID = ai.action;
-			state.settings = Object.assign({}, DEFAULTS, (ai.payload && ai.payload.settings) || {});
+			state.settings = withDefaults(ai.payload && ai.payload.settings);
 		} catch (e) {
-			state.settings = Object.assign({}, DEFAULTS);
+			state.settings = withDefaults();
 		}
 		applyI18n();
 
@@ -120,12 +126,17 @@
 		ws.onopen = () => {
 			ws.send(JSON.stringify({ event: registerEvent, uuid }));
 			send({ event: "getGlobalSettings", context: ctx });
-			// O plugin pode ainda não saber que a UI abriu; repete o "hello" até receber o ambiente.
+			// O plugin pode ainda não conhecer esta tecla (ex.: tecla recém-colada);
+			// repete o "hello" até receber o ambiente.
 			let tries = 0;
 			const hello = () => {
-				if (state.gotEnv || tries++ >= 10) return;
-				toPlugin({ cmd: "hello" });
-				setTimeout(hello, 600);
+				if (state.gotEnv) return;
+				if (tries++ >= 25) {
+					toast(t("noPlugin"), "err");
+					return;
+				}
+				send({ event: "sendToPlugin", action: actionUUID, context: ctx, payload: { cmd: "hello" } });
+				setTimeout(hello, tries < 10 ? 500 : 1500);
 			};
 			hello();
 			checkPaths();
@@ -135,7 +146,7 @@
 			let msg;
 			try { msg = JSON.parse(m.data); } catch { return; }
 			if (msg.event === "didReceiveSettings") {
-				state.settings = Object.assign({}, DEFAULTS, msg.payload.settings || {});
+				state.settings = withDefaults(msg.payload.settings);
 				renderAll();
 			} else if (msg.event === "didReceiveGlobalSettings") {
 				const g = (msg.payload && msg.payload.settings) || {};
@@ -150,8 +161,17 @@
 	function send(obj) {
 		if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
 	}
+	/** Pedidos feitos antes de o plugin responder ficam na fila (senão seriam perdidos). */
+	const queue = [];
 	function toPlugin(payload) {
+		if (!state.gotEnv && payload.cmd !== "hello") {
+			queue.push(payload);
+			return;
+		}
 		send({ event: "sendToPlugin", action: actionUUID, context: ctx, payload });
+	}
+	function flushQueue() {
+		while (queue.length) toPlugin(queue.shift());
 	}
 
 	let saveTimer = 0;
@@ -181,6 +201,7 @@
 					cacheAutoLang(state.autoLang);
 				}
 				setLang(state.gotGlobal ? state.langPref : p.langPref || state.langPref);
+				flushQueue();
 				break;
 			case "apps":
 				state.apps = p.apps || [];

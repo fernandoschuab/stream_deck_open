@@ -140,8 +140,8 @@ with sync_playwright() as p:
     pg.select_option('#langSel', 'en'); pg.wait_for_timeout(100)
     pg.reload()
     pg.evaluate("""connectElgatoStreamDeckSocket(12345, 'CTX', 'registerPropertyInspector', '{}', JSON.stringify({action:'x', context:'CTX', payload:{settings:{}}}))""")
-    pg.wait_for_timeout(300)
-    assert pg.inner_text('#testBtn').strip() == 'Test now', 'global pref should apply before plugin reply'
+    pg.wait_for_function("document.querySelector('#testBtn').innerText.trim() === 'Test now'", timeout=900)
+    assert pg.evaluate('window.__helloCount') < 3, 'global pref should apply before plugin reply'
     pg.wait_for_timeout(1500)
     assert pg.inner_text('#testBtn').strip() == 'Test now', pg.inner_text('#testBtn')
     assert pg.eval_on_selector('#langSel', 'e => e.value') == 'en'

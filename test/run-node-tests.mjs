@@ -31,9 +31,12 @@ const step = (name, cmd, args, opts = {}) => {
 };
 
 step("unit", process.execPath, [path.join(tmp, "unit.mjs")]);
+// Pasta temporária para o cache de ícones do "Windows" simulado (senão vira uma pasta dentro do plugin).
+const localAppData = fs.mkdtempSync(path.join(os.tmpdir(), "openwith-lad-"));
 step("e2e windows (simulado)", process.execPath, [path.join(root, "test", "plugin_e2e.mjs")], {
-	env: { ...process.env, E2E_PLATFORM: "windows", LC_ALL: "pt_BR.UTF-8", LANG: "pt_BR.UTF-8" },
+	env: { ...process.env, E2E_PLATFORM: "windows", LOCALAPPDATA: localAppData, LC_ALL: "pt_BR.UTF-8", LANG: "pt_BR.UTF-8" },
 });
+step("colar tecla copiada (ordens de eventos)", process.execPath, [path.join(root, "test", "paste_repro.mjs")]);
 step("e2e mac", process.execPath, [path.join(root, "test", "plugin_e2e.mjs")], {
 	env: { ...process.env, E2E_PLATFORM: "mac", E2E_EXPECT_LANG: process.env.E2E_EXPECT_LANG_MAC || "" },
 });

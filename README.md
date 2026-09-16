@@ -2,7 +2,7 @@
 
 Abre **uma ou várias pastas/arquivos** no programa que você escolher (Antigravity, VS Code, Cursor, Finder, Explorador de Arquivos…) direto do Stream Deck, sem Terminal e sem digitar comando.
 
-**Versão atual: 1.1.0** — veja o [histórico de versões](#versões).
+**Versão atual: 1.1.1** — veja o [histórico de versões](#versões).
 
 <img src="docs/preview.png" width="260"> <img src="docs/preview-en.png" width="260"> <img src="docs/preview-es.png" width="260">
 
@@ -118,7 +118,8 @@ test/pi_test.py              teste da UI (Mac) com Playwright e WebSocket simula
 test/pi_test_win.py          teste da UI no modo Windows
 test/unit.mjs                testes de unidade (caminhos do Windows, filtros, etc.)
 test/plugin_e2e.mjs          backend com um Stream Deck simulado (E2E_PLATFORM=mac|windows)
-test/run-node-tests.mjs      roda unidade + e2e nos dois modos
+test/paste_repro.mjs         simula copiar/colar uma tecla em várias ordens de eventos
+test/run-node-tests.mjs      roda unidade + e2e nos dois modos + colar tecla
 ```
 
 Testes (depois de `npm run build`):
@@ -131,5 +132,6 @@ Para mudar a versão, altere `Version` em `com.fernandoschuab.openwith.sdPlugin/
 
 ## Versões
 
+- **1.1.1** — Correção: ao copiar e colar uma tecla, a tela de configuração da tecla colada não recebia respostas do plugin (sem idioma, ícones, lista de apps e seletor de pastas). Agora as respostas vão direto para a tecla que perguntou, e os pedidos feitos antes de o plugin responder ficam numa fila.
 - **1.1.0** — Suporte a **Windows 10/11** no mesmo plugin: lista de apps do Menu Iniciar, seletor do Explorador com várias pastas, ícones do sistema e idioma do Windows. Correção: a tela agora recebe o idioma do sistema mesmo quando abre antes do plugin estar pronto.
 - **1.0.0** — Primeira versão (macOS): várias pastas por tecla, seletor de apps com ícones, português/inglês/espanhol.

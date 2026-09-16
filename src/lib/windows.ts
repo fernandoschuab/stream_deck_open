@@ -18,7 +18,8 @@ const SYSTEM_ROOT = process.env.SystemRoot || process.env.windir || "C:\\Windows
 const POWERSHELL = w.join(SYSTEM_ROOT, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 const PS_SCRIPT = path.join(SCRIPTS_DIR, "win", "openwith.ps1");
 const LOCAL_APPDATA = process.env.LOCALAPPDATA || w.join(HOME, "AppData", "Local");
-const ICON_CACHE = w.join(LOCAL_APPDATA, "com.fernandoschuab.openwith", "icons");
+// Fora do Windows (só em testes) usa o separador do sistema para não criar pastas com "\\" no nome.
+const ICON_CACHE = (process.platform === "win32" ? w : path).join(LOCAL_APPDATA, "com.fernandoschuab.openwith", "icons");
 export const EXPLORER = w.join(SYSTEM_ROOT, "explorer.exe");
 
 /* ------------------------------------------------------------------ */

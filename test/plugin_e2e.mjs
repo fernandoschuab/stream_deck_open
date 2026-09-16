@@ -55,12 +55,13 @@ try {
 	send({ event: "willAppear", action: ACTION, context: ctx, device: "DEV", payload: { settings: { useAppIcon: false }, coordinates: { column: 0, row: 0 }, controller: "Keypad", isInMultiAction: false } });
 	await wait(100);
 
-	// 1) A UI manda "hello" ANTES do propertyInspectorDidAppear (a corrida que perdia a resposta).
+	// 1) A UI manda "hello" ANTES do propertyInspectorDidAppear: a resposta vai direto para esta tecla.
 	send({ event: "sendToPlugin", action: ACTION, context: ctx, payload: { cmd: "hello" } });
-	await wait(400);
-	assert.equal(got.filter((m) => m.event === "sendToPropertyInspector").length, 0, "nada deveria sair antes do didAppear");
-	send({ event: "propertyInspectorDidAppear", action: ACTION, context: ctx, device: "DEV" });
 	const env1 = await waitFor((m) => m.event === "sendToPropertyInspector" && m.payload?.type === "env");
+	assert.equal(env1.context, ctx, "resposta endereçada à tecla que perguntou");
+	got.length = 0;
+	send({ event: "propertyInspectorDidAppear", action: ACTION, context: ctx, device: "DEV" });
+	await waitFor((m) => m.event === "sendToPropertyInspector" && m.payload?.type === "env" && m.context === ctx);
 	console.log("env1", env1.payload);
 	const auto = env1.payload.autoLang;
 	assert.ok(["pt", "en", "es"].includes(auto));

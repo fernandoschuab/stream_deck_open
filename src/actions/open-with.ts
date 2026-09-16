@@ -12,6 +12,7 @@ import streamDeck, {
 import type { JsonValue } from "@elgato/utils";
 
 import { letterIcon } from "../lib/common";
+import { sendToPI } from "../lib/piChannel";
 import { type Lang, type LangPref, resolveLang } from "../lib/i18n";
 import { type PickKind, platform } from "../lib/platform";
 
@@ -64,9 +65,6 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 	private langPref: LangPref = "auto";
 	private systemLang?: string;
 	private langReady?: Promise<void>;
-	/** Mensagens para a UI que chegaram antes do Stream Deck avisar que ela está aberta. */
-	private outbox: JsonValue[] = [];
-
 	constructor() {
 		super();
 		// A UI grava o idioma direto nas configurações globais; acompanhamos as mudanças aqui.
@@ -75,24 +73,9 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 		});
 	}
 
-	/**
-	 * Envia para o Property Inspector. O SDK descarta mensagens enquanto não recebeu
-	 * `propertyInspectorDidAppear`; nesse caso guardamos e enviamos logo depois.
-	 */
-	private async toPI(payload: JsonValue): Promise<void> {
-		if (streamDeck.ui.action) {
-			await streamDeck.ui.sendToPropertyInspector(payload);
-		} else {
-			this.outbox.push(payload);
-			if (this.outbox.length > 20) this.outbox.shift();
-		}
-	}
-
-	override async onPropertyInspectorDidAppear(_ev: PropertyInspectorDidAppearEvent<OpenSettings>): Promise<void> {
-		const queued = this.outbox.splice(0);
-		for (const m of queued) await streamDeck.ui.sendToPropertyInspector(m);
+	override async onPropertyInspectorDidAppear(ev: PropertyInspectorDidAppearEvent<OpenSettings>): Promise<void> {
 		await this.loadLanguage();
-		await streamDeck.ui.sendToPropertyInspector(this.envPayload());
+		await sendToPI(ev.action.id, this.envPayload());
 	}
 
 	/** Carrega (uma vez) o idioma do macOS e a preferência salva nas configurações globais. */
@@ -197,7 +180,8 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, OpenSettings>): Promise<void> {
 		const msg = ev.payload as PiMessage;
 		if (!msg || typeof msg !== "object" || !("cmd" in msg)) return;
-		const send = (payload: JsonValue) => this.toPI(payload);
+		const context = ev.action.id;
+		const send = (payload: JsonValue) => sendToPI(context, payload);
 
 		try {
 			switch (msg.cmd) {
