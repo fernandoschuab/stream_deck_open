@@ -1,4 +1,7 @@
 node_modules/
+.idea/
+.vscode/
 *.sdPlugin/bin
 *.sdPlugin/logs
 dist/
+vscode_extension/
