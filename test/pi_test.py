@@ -26,15 +26,19 @@ icons = {apps[0]['path']: icon('#3d7bff'), apps[1]['path']: icon('#222'), apps[6
 
 MOCK = """
 window.__sent = [];
+window.__helloCount = 0;
+window.__global = JSON.parse(sessionStorage.getItem('g') || '{}');
 window.__mock = %s;
 class FakeWS {
   constructor(url){ this.readyState = 0; window.__ws = this; setTimeout(()=>{ this.readyState = 1; this.onopen && this.onopen(); }, 10); }
   send(s){
     const m = JSON.parse(s); window.__sent.push(m);
     const reply = (payload, delay) => setTimeout(()=> this.onmessage && this.onmessage({data: JSON.stringify({event:'sendToPropertyInspector', payload})}), delay||20);
+    if (m.event === 'getGlobalSettings') setTimeout(()=> this.onmessage && this.onmessage({data: JSON.stringify({event:'didReceiveGlobalSettings', payload:{settings: window.__global}})}), 30);
+    if (m.event === 'setGlobalSettings') { window.__global = m.payload; sessionStorage.setItem('g', JSON.stringify(m.payload)); }
     if (m.event !== 'sendToPlugin') return;
     const p = m.payload, M = window.__mock;
-    if (p.cmd==='hello') reply({type:'env', home: M.home, lang: 'pt', langPref: 'auto', autoLang: 'pt'});
+    if (p.cmd==='hello') { window.__helloCount++; if (window.__helloCount >= 3) reply({type:'env', home: M.home, lang: 'pt', langPref: 'auto', autoLang: 'pt'}); }
     if (p.cmd==='setLanguage') reply({type:'env', home: M.home, lang: p.lang==='auto' ? 'pt' : p.lang, langPref: p.lang, autoLang: 'pt'});
     if (p.cmd==='listApps') { reply({type:'apps', apps: M.apps}, 200); reply({type:'icons', icons: M.icons}, 400); }
     if (p.cmd==='appInfo') reply({type:'appInfo', app: M.apps.find(a=>a.path===p.appPath)||{name:'x',path:p.appPath}, icon: M.icons[p.appPath]||null});
@@ -55,7 +59,12 @@ with sync_playwright() as p:
     pg.add_init_script(MOCK)
     pg.goto(UI)
     pg.evaluate("""connectElgatoStreamDeckSocket(12345, 'CTX', 'registerPropertyInspector', '{}', JSON.stringify({action:'com.fernandoschuab.openwith.open', context:'CTX', payload:{settings:{}}}))""")
-    pg.wait_for_timeout(200)
+    pg.wait_for_timeout(100)
+    early = pg.inner_text('#testBtn').strip()
+    pg.wait_for_timeout(1600)
+    assert pg.evaluate('window.__helloCount') >= 3
+    assert pg.inner_text('#testBtn').strip() == 'Testar agora', pg.inner_text('#testBtn')
+    print('early label (before plugin reply):', early)
     pg.screenshot(path=OUT+'01_empty.png')
 
     # open app list
@@ -112,6 +121,7 @@ with sync_playwright() as p:
     assert pg.inner_text('#testBtn').strip() == 'Probar ahora', pg.inner_text('#testBtn')
     assert pg.inner_text('#pathCount') == '2 elementos'
     assert any(m['event']=='sendToPlugin' and m['payload'].get('cmd')=='setLanguage' and m['payload']['lang']=='es' for m in pg.evaluate('window.__sent'))
+    assert pg.evaluate('window.__global') == {'language': 'es'}
     pg.screenshot(path=OUT+'06_es.png', full_page=True)
     pg.select_option('#langSel', 'en'); pg.wait_for_timeout(200)
     assert pg.inner_text('#addFolders').strip() == 'Folders'
@@ -125,6 +135,26 @@ with sync_playwright() as p:
         assert w not in body, (w, body)
     pg.select_option('#langSel', 'auto'); pg.wait_for_timeout(200)
     assert pg.inner_text('#testBtn').strip() == 'Testar agora'
+
+    # reopen: saved global preference (en) must win over system (pt); cached auto lang used before reply
+    pg.select_option('#langSel', 'en'); pg.wait_for_timeout(100)
+    pg.reload()
+    pg.evaluate("""connectElgatoStreamDeckSocket(12345, 'CTX', 'registerPropertyInspector', '{}', JSON.stringify({action:'x', context:'CTX', payload:{settings:{}}}))""")
+    pg.wait_for_timeout(300)
+    assert pg.inner_text('#testBtn').strip() == 'Test now', 'global pref should apply before plugin reply'
+    pg.wait_for_timeout(1500)
+    assert pg.inner_text('#testBtn').strip() == 'Test now', pg.inner_text('#testBtn')
+    assert pg.eval_on_selector('#langSel', 'e => e.value') == 'en'
+    pg.select_option('#langSel', 'auto'); pg.wait_for_timeout(100)
+    assert pg.inner_text('#testBtn').strip() == 'Testar agora'
+    # reopen with auto + plugin silent: cached auto language (pt) is used
+    pg.reload()
+    pg.evaluate("window.__mock.silent = true")
+    pg.evaluate("""connectElgatoStreamDeckSocket(12345, 'CTX', 'registerPropertyInspector', '{}', JSON.stringify({action:'x', context:'CTX', payload:{settings:{}}}))""")
+    pg.wait_for_timeout(400)
+    assert pg.evaluate('window.__helloCount') < 3
+    assert pg.inner_text('#testBtn').strip() == 'Testar agora', pg.inner_text('#testBtn')
+    assert pg.eval_on_selector('#langSel', 'e => e.value') == 'auto'
 
     # narrow width
     pg.set_viewport_size({'width': 290, 'height': 760}); pg.wait_for_timeout(100)

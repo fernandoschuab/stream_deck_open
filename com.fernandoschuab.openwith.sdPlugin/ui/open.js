@@ -31,6 +31,8 @@
 		lang: "en",
 		langPref: "auto",
 		autoLang: null,
+		gotGlobal: false,
+		gotEnv: false,
 	};
 
 	/* ------------------------------------------------------------ i18n */
@@ -64,8 +66,27 @@
 	function setLang(pref, auto) {
 		state.langPref = LANGS.includes(pref) ? pref : "auto";
 		if (auto) state.autoLang = auto;
-		state.lang = state.langPref !== "auto" ? state.langPref : state.autoLang || state.lang;
+		state.lang = state.langPref !== "auto" ? state.langPref : state.autoLang || "en";
 		applyI18n();
+	}
+
+	const LS_KEY = "openwith.autoLang";
+	function cachedAutoLang() {
+		try { return toLang(localStorage.getItem(LS_KEY)); } catch (e) { return null; }
+	}
+	function cacheAutoLang(l) {
+		try { localStorage.setItem(LS_KEY, l); } catch (e) { /* ignore */ }
+	}
+	/** Palpite inicial (antes da resposta do plugin): cache > idiomas do navegador > idioma do Stream Deck. */
+	function guessLang(sdLang) {
+		const cached = cachedAutoLang();
+		if (cached) return cached;
+		const list = [].concat(navigator.languages || [], navigator.language || []);
+		for (const l of list) {
+			const g = toLang(l);
+			if (g) return g;
+		}
+		return toLang(sdLang) || "en";
 	}
 
 	const DEFAULTS = { paths: [], mode: "separate", newInstance: false, delay: 300, useAppIcon: true };
@@ -76,8 +97,7 @@
 		ctx = uuid;
 		try {
 			const inf = typeof info === "string" ? JSON.parse(info) : info;
-			const guess = toLang(navigator.language) || toLang(inf && inf.application && inf.application.language);
-			if (guess) state.lang = state.autoLang = guess;
+			state.lang = state.autoLang = guessLang(inf && inf.application && inf.application.language);
 		} catch (e) { /* ignore */ }
 		try {
 			const ai = typeof actionInfo === "string" ? JSON.parse(actionInfo) : actionInfo;
@@ -91,7 +111,15 @@
 		ws = new WebSocket("ws://127.0.0.1:" + port);
 		ws.onopen = () => {
 			ws.send(JSON.stringify({ event: registerEvent, uuid }));
-			toPlugin({ cmd: "hello" });
+			send({ event: "getGlobalSettings", context: ctx });
+			// O plugin pode ainda não saber que a UI abriu; repete o "hello" até receber o ambiente.
+			let tries = 0;
+			const hello = () => {
+				if (state.gotEnv || tries++ >= 10) return;
+				toPlugin({ cmd: "hello" });
+				setTimeout(hello, 600);
+			};
+			hello();
 			checkPaths();
 			if (S().appPath && !state.icons[S().appPath]) toPlugin({ cmd: "appInfo", appPath: S().appPath });
 		};
@@ -101,6 +129,10 @@
 			if (msg.event === "didReceiveSettings") {
 				state.settings = Object.assign({}, DEFAULTS, msg.payload.settings || {});
 				renderAll();
+			} else if (msg.event === "didReceiveGlobalSettings") {
+				const g = (msg.payload && msg.payload.settings) || {};
+				state.gotGlobal = true;
+				setLang(g.language);
 			} else if (msg.event === "sendToPropertyInspector") {
 				onPluginMessage(msg.payload || {});
 			}
@@ -134,14 +166,12 @@
 		switch (p.type) {
 			case "env":
 				state.home = p.home || "";
-				if (p.lang) {
-					state.autoLang = p.autoLang || state.autoLang;
-					state.langPref = p.langPref || "auto";
-					state.lang = p.lang;
-					applyI18n();
-				} else {
-					renderAll();
+				state.gotEnv = true;
+				if (p.autoLang) {
+					state.autoLang = toLang(p.autoLang) || state.autoLang;
+					cacheAutoLang(state.autoLang);
 				}
+				setLang(state.gotGlobal ? state.langPref : p.langPref || state.langPref);
 				break;
 			case "apps":
 				state.apps = p.apps || [];
@@ -710,6 +740,7 @@
 
 		$("langSel").addEventListener("change", (e) => {
 			setLang(e.target.value);
+			send({ event: "setGlobalSettings", context: ctx, payload: { language: state.langPref } });
 			toPlugin({ cmd: "setLanguage", lang: state.langPref });
 		});
 

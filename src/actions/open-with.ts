@@ -3,6 +3,7 @@ import streamDeck, {
 	type DidReceiveSettingsEvent,
 	type KeyAction,
 	type KeyDownEvent,
+	type PropertyInspectorDidAppearEvent,
 	type SendToPluginEvent,
 	SingletonAction,
 	type WillAppearEvent,
@@ -47,6 +48,24 @@ const log = streamDeck.logger.createScope("OpenWith");
 
 type GlobalSettings = { language?: LangPref };
 
+const normalizePref = (v: unknown): LangPref => (v === "pt" || v === "en" || v === "es" ? v : "auto");
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+	return new Promise((resolve, reject) => {
+		const t = setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms);
+		p.then(
+			(v) => {
+				clearTimeout(t);
+				resolve(v);
+			},
+			(e) => {
+				clearTimeout(t);
+				reject(e);
+			},
+		);
+	});
+}
+
 @action({ UUID: "com.fernandoschuab.openwith.open" })
 export class OpenWith extends SingletonAction<OpenSettings> {
 	/** Último app aplicado como imagem, por instância da tecla. */
@@ -55,17 +74,50 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 	private langPref: LangPref = "auto";
 	private systemLang?: string;
 	private langReady?: Promise<void>;
+	/** Mensagens para a UI que chegaram antes do Stream Deck avisar que ela está aberta. */
+	private outbox: JsonValue[] = [];
+
+	constructor() {
+		super();
+		// A UI grava o idioma direto nas configurações globais; acompanhamos as mudanças aqui.
+		streamDeck.settings.onDidReceiveGlobalSettings<GlobalSettings>((ev) => {
+			this.langPref = normalizePref(ev.settings?.language);
+		});
+	}
+
+	/**
+	 * Envia para o Property Inspector. O SDK descarta mensagens enquanto não recebeu
+	 * `propertyInspectorDidAppear`; nesse caso guardamos e enviamos logo depois.
+	 */
+	private async toPI(payload: JsonValue): Promise<void> {
+		if (streamDeck.ui.action) {
+			await streamDeck.ui.sendToPropertyInspector(payload);
+		} else {
+			this.outbox.push(payload);
+			if (this.outbox.length > 20) this.outbox.shift();
+		}
+	}
+
+	override async onPropertyInspectorDidAppear(_ev: PropertyInspectorDidAppearEvent<OpenSettings>): Promise<void> {
+		const queued = this.outbox.splice(0);
+		for (const m of queued) await streamDeck.ui.sendToPropertyInspector(m);
+		await this.loadLanguage();
+		await streamDeck.ui.sendToPropertyInspector(this.envPayload());
+	}
 
 	/** Carrega (uma vez) o idioma do macOS e a preferência salva nas configurações globais. */
 	private loadLanguage(): Promise<void> {
 		this.langReady ??= (async () => {
-			this.systemLang = await readSystemLanguage();
-			try {
-				const g = await streamDeck.settings.getGlobalSettings<GlobalSettings>();
-				if (g?.language) this.langPref = g.language;
-			} catch (e) {
-				log.warn("Could not read global settings", e);
-			}
+			const [sys, g] = await Promise.all([
+				readSystemLanguage(),
+				withTimeout(streamDeck.settings.getGlobalSettings<GlobalSettings>(), 1500).catch((e) => {
+					log.warn("Could not read global settings", e);
+					return undefined;
+				}),
+			]);
+			this.systemLang = sys;
+			if (g?.language) this.langPref = normalizePref(g.language);
+			log.info(`Language: system=${sys ?? "?"} streamDeck=${this.sdLang ?? "?"} pref=${this.langPref} -> ${this.lang}`);
 		})();
 		return this.langReady;
 	}
@@ -154,7 +206,7 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, OpenSettings>): Promise<void> {
 		const msg = ev.payload as PiMessage;
 		if (!msg || typeof msg !== "object" || !("cmd" in msg)) return;
-		const send = (payload: JsonValue) => streamDeck.ui.sendToPropertyInspector(payload);
+		const send = (payload: JsonValue) => this.toPI(payload);
 
 		try {
 			switch (msg.cmd) {
@@ -165,9 +217,8 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 
 				case "setLanguage": {
 					await this.loadLanguage();
-					const pref = msg.lang;
-					this.langPref = pref === "pt" || pref === "en" || pref === "es" ? pref : "auto";
-					await streamDeck.settings.setGlobalSettings<GlobalSettings>({ language: this.langPref });
+					// A UI já gravou nas configurações globais; aqui só atualizamos a memória.
+					this.langPref = normalizePref(msg.lang);
 					await send(this.envPayload());
 					break;
 				}

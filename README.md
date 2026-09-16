@@ -93,4 +93,5 @@ src/lib/i18n.ts              idioma do sistema + textos dos seletores do Finder
 *.sdPlugin/scripts/pick.js   seletor nativo (JXA)
 *.sdPlugin/scripts/icons.js  extração de ícones via NSWorkspace (JXA)
 test/pi_test.py              teste da UI com Playwright (WebSocket simulado)
+test/plugin_e2e.mjs          teste do backend com um Stream Deck simulado (cd test && ln -s ../node_modules && node plugin_e2e.mjs)
 ```
