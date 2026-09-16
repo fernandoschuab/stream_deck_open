@@ -1,13 +1,13 @@
 {
-	"Name": "Abrir Com",
+	"Name": "Open With",
 	"Version": "1.0.0.0",
 	"Author": "Fernando Schuab",
 	"Actions": [
 		{
-			"Name": "Abrir pastas em…",
+			"Name": "Open folders in…",
 			"UUID": "com.fernandoschuab.openwith.open",
 			"Icon": "imgs/actions/open/icon",
-			"Tooltip": "Abre uma ou várias pastas/arquivos no programa escolhido.",
+			"Tooltip": "Opens one or more folders/files in the chosen app.",
 			"PropertyInspectorPath": "ui/open.html",
 			"Controllers": [
 				"Keypad"
@@ -22,10 +22,10 @@
 			]
 		}
 	],
-	"Category": "Abrir Com",
+	"Category": "Open With",
 	"CategoryIcon": "imgs/plugin/category-icon",
 	"CodePath": "bin/plugin.js",
-	"Description": "Abre uma ou várias pastas/arquivos no programa escolhido (ex.: VS Code, Cursor, Antigravity), sem Terminal.",
+	"Description": "Open one or more folders/files in the app of your choice (VS Code, Cursor, Antigravity, Finder…), no Terminal needed.",
 	"Icon": "imgs/plugin/marketplace",
 	"SDKVersion": 3,
 	"Software": {

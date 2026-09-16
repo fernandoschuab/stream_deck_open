@@ -1,0 +1,9 @@
+{
+	"Name": "Abrir con",
+	"Category": "Abrir con",
+	"Description": "Abre una o varias carpetas/archivos en la app que elijas (VS Code, Cursor, Antigravity, Finder…), sin Terminal.",
+	"com.fernandoschuab.openwith.open": {
+		"Name": "Abrir carpetas en…",
+		"Tooltip": "Abre una o varias carpetas/archivos en la app elegida."
+	}
+}

@@ -10,6 +10,7 @@ import streamDeck, {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
+import { type Lang, type LangPref, readSystemLanguage, resolveLang } from "../lib/i18n";
 import {
 	appNameFromPath,
 	getIcons,
@@ -35,6 +36,7 @@ export type OpenSettings = {
 
 type PiMessage =
 	| { cmd: "hello" }
+	| { cmd: "setLanguage"; lang: LangPref }
 	| { cmd: "listApps"; force?: boolean }
 	| { cmd: "pick"; kind: PickKind; multiple?: boolean; defaultLocation?: string; reqId?: string }
 	| { cmd: "checkPaths"; paths: string[] }
@@ -43,10 +45,52 @@ type PiMessage =
 
 const log = streamDeck.logger.createScope("OpenWith");
 
+type GlobalSettings = { language?: LangPref };
+
 @action({ UUID: "com.fernandoschuab.openwith.open" })
 export class OpenWith extends SingletonAction<OpenSettings> {
 	/** Último app aplicado como imagem, por instância da tecla. */
 	private readonly appliedImage = new Map<string, string>();
+
+	private langPref: LangPref = "auto";
+	private systemLang?: string;
+	private langReady?: Promise<void>;
+
+	/** Carrega (uma vez) o idioma do macOS e a preferência salva nas configurações globais. */
+	private loadLanguage(): Promise<void> {
+		this.langReady ??= (async () => {
+			this.systemLang = await readSystemLanguage();
+			try {
+				const g = await streamDeck.settings.getGlobalSettings<GlobalSettings>();
+				if (g?.language) this.langPref = g.language;
+			} catch (e) {
+				log.warn("Could not read global settings", e);
+			}
+		})();
+		return this.langReady;
+	}
+
+	private get sdLang(): string | undefined {
+		try {
+			return streamDeck.info?.application?.language;
+		} catch {
+			return undefined;
+		}
+	}
+
+	private get lang(): Lang {
+		return resolveLang(this.langPref, this.systemLang, this.sdLang);
+	}
+
+	private envPayload(): JsonValue {
+		return {
+			type: "env",
+			home: HOME,
+			lang: this.lang,
+			langPref: this.langPref,
+			autoLang: resolveLang("auto", this.systemLang, this.sdLang),
+		};
+	}
 
 	override async onWillAppear(ev: WillAppearEvent<OpenSettings>): Promise<void> {
 		if (ev.action.isKey()) await this.refreshImage(ev.action, ev.payload.settings);
@@ -66,7 +110,7 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 
 	private async execute(act: KeyAction<OpenSettings>, s: OpenSettings): Promise<void> {
 		if (!s.appPath) {
-			log.warn("Nenhum programa configurado.");
+			log.warn("No application configured.");
 			await act.showAlert();
 			return;
 		}
@@ -78,15 +122,15 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 				newInstance: s.newInstance ?? false,
 				delay: Math.max(0, Math.min(10_000, Number(s.delay ?? 300))),
 			});
-			log.info(`Executado: ${JSON.stringify(calls)}`);
+			log.info(`Executed: ${JSON.stringify(calls)}`);
 			if (missing.length) {
-				log.warn(`Caminhos não encontrados: ${missing.join(", ")}`);
+				log.warn(`Paths not found: ${missing.join(", ")}`);
 				await act.showAlert();
 			} else {
 				await act.showOk();
 			}
 		} catch (err) {
-			log.error("Falha ao abrir", err);
+			log.error("Failed to open", err);
 			await act.showAlert();
 		}
 	}
@@ -115,8 +159,18 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 		try {
 			switch (msg.cmd) {
 				case "hello":
-					await send({ type: "env", home: HOME });
+					await this.loadLanguage();
+					await send(this.envPayload());
 					break;
+
+				case "setLanguage": {
+					await this.loadLanguage();
+					const pref = msg.lang;
+					this.langPref = pref === "pt" || pref === "en" || pref === "es" ? pref : "auto";
+					await streamDeck.settings.setGlobalSettings<GlobalSettings>({ language: this.langPref });
+					await send(this.envPayload());
+					break;
+				}
 
 				case "listApps": {
 					const apps = await listApps(!!msg.force);
@@ -125,7 +179,7 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 						apps.map((a) => a.path),
 						64,
 						(icons) => send({ type: "icons", icons }),
-					).catch((e) => log.error("Ícones", e));
+					).catch((e) => log.error("Icons", e));
 					break;
 				}
 
@@ -140,7 +194,8 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 				}
 
 				case "pick": {
-					const paths = await pick(msg.kind, msg.multiple ?? true, msg.defaultLocation);
+					await this.loadLanguage();
+					const paths = await pick(msg.kind, msg.multiple ?? true, msg.defaultLocation, this.lang);
 					const payload: Record<string, JsonValue> = { type: "picked", kind: msg.kind, paths, reqId: msg.reqId ?? null };
 					if (msg.kind === "app" && paths[0]) {
 						const icons = await getIcons([paths[0]], 64);
@@ -168,7 +223,7 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 				}
 			}
 		} catch (err) {
-			log.error(`Comando ${msg.cmd} falhou`, err);
+			log.error(`Command ${msg.cmd} failed`, err);
 			await send({ type: "error", cmd: msg.cmd, message: err instanceof Error ? err.message : String(err) });
 		}
 	}

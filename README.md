@@ -1,13 +1,13 @@
-# Abrir Com — plugin Stream Deck (macOS)
+# Open With (Abrir Com) — plugin Stream Deck (macOS)
 
 Abre **uma ou várias pastas/arquivos** no programa que você escolher (Antigravity, VS Code, Cursor, Finder…) direto do Stream Deck, sem Terminal e sem digitar comando.
 
-<img src="docs/preview.png" width="300"> <img src="docs/preview-apps.png" width="300">
+<img src="docs/preview.png" width="260"> <img src="docs/preview-en.png" width="260"> <img src="docs/preview-es.png" width="260">
 
 ## Instalar
 
 1. Dê dois cliques em `dist/com.fernandoschuab.openwith.streamDeckPlugin`.
-2. No Stream Deck, arraste a ação **Abrir Com › Abrir pastas em…** para uma tecla.
+2. No Stream Deck, arraste a ação **Open With › Open folders in…** para uma tecla. Com o Stream Deck em espanhol, ela aparece como **Abrir con › Abrir carpetas en…**.
 
 Requisitos: Stream Deck **7.1+** e macOS **12+**.
 
@@ -29,6 +29,20 @@ Sem pastas na lista, a tecla apenas abre o programa.
 Se algum caminho não existir, os demais abrem normalmente e a tecla mostra ⚠️.
 
 Seu caso antigo (Terminal + delay + comando) vira: **Programa** = Antigravity IDE, **Pastas** = `DOMUS_API` e `DOMUS_ADMIN`, modo *Uma janela por item*, *Nova instância* ligada.
+
+## Idiomas
+
+A tela de configuração está em **português, inglês e espanhol**. Para trocar, use o seletor **Idioma** no rodapé da tela. A escolha vale para todas as teclas.
+
+- **Automático** (padrão): segue o idioma do macOS. Se o macOS estiver num idioma sem tradução, usa o idioma do Stream Deck e, por último, inglês.
+- Os títulos das janelas do Finder ("Escolha uma ou mais pastas") acompanham o idioma escolhido.
+- O nome da ação na lista do Stream Deck vem de `en.json` e `es.json`. O Stream Deck não tem português entre os idiomas do app, então com ele em inglês o nome aparece em inglês.
+
+Para adicionar um idioma, siga três passos:
+
+1. Crie o bloco do idioma em `ui/i18n.js`.
+2. Adicione o idioma em `src/lib/i18n.ts`.
+3. Se o Stream Deck suportar esse idioma (de, fr, ja, ko, zh_CN, zh_TW), crie também o `<código>.json` do manifest.
 
 ## Problemas
 
@@ -53,6 +67,9 @@ Estrutura:
 src/actions/open-with.ts     ação (tecla, mensagens da UI, ícone da tecla)
 src/lib/mac.ts               open, seletores, lista de apps, ícones
 *.sdPlugin/ui/open.*         Property Inspector (HTML/CSS/JS puro, sem dependências)
+*.sdPlugin/ui/i18n.js        traduções da UI (pt/en/es)
+*.sdPlugin/en.json, es.json  nomes localizados do manifest
+src/lib/i18n.ts              idioma do sistema + textos dos seletores do Finder
 *.sdPlugin/scripts/pick.js   seletor nativo (JXA)
 *.sdPlugin/scripts/icons.js  extração de ícones via NSWorkspace (JXA)
 test/pi_test.py              teste da UI com Playwright (WebSocket simulado)

@@ -28,7 +28,45 @@
 		filter: "",
 		active: 0,
 		niAuto: false,
+		lang: "en",
+		langPref: "auto",
+		autoLang: null,
 	};
+
+	/* ------------------------------------------------------------ i18n */
+	const DICT = window.OW_I18N || {};
+	const LANGS = ["pt", "en", "es"];
+	const toLang = (code) => {
+		const b = String(code || "").toLowerCase().split(/[-_]/)[0];
+		return LANGS.includes(b) ? b : null;
+	};
+	function t(key, vars) {
+		const d = DICT[state.lang] || DICT.en || {};
+		let str = d[key] != null ? d[key] : (DICT.en && DICT.en[key]) != null ? DICT.en[key] : key;
+		if (vars) for (const k in vars) str = str.split("{" + k + "}").join(vars[k]);
+		return str;
+	}
+	function applyI18n() {
+		document.documentElement.lang = state.lang === "pt" ? "pt-BR" : state.lang;
+		document.querySelectorAll("[data-i18n]").forEach((n) => (n.textContent = t(n.dataset.i18n)));
+		document.querySelectorAll("[data-i18n-html]").forEach((n) => (n.innerHTML = t(n.dataset.i18nHtml)));
+		document.querySelectorAll("[data-i18n-ph]").forEach((n) => (n.placeholder = t(n.dataset.i18nPh)));
+		document.querySelectorAll("[data-i18n-title]").forEach((n) => (n.title = t(n.dataset.i18nTitle)));
+		const sel = $("langSel");
+		if (sel) {
+			const autoName = state.autoLang && DICT[state.autoLang] ? DICT[state.autoLang].langName : "—";
+			sel.options[0].textContent = t("langAuto", { lang: autoName });
+			sel.value = state.langPref;
+		}
+		renderAll();
+		if (!$("appPop").hidden) renderAppList();
+	}
+	function setLang(pref, auto) {
+		state.langPref = LANGS.includes(pref) ? pref : "auto";
+		if (auto) state.autoLang = auto;
+		state.lang = state.langPref !== "auto" ? state.langPref : state.autoLang || state.lang;
+		applyI18n();
+	}
 
 	const DEFAULTS = { paths: [], mode: "separate", newInstance: false, delay: 300, useAppIcon: true };
 	const S = () => state.settings;
@@ -37,13 +75,18 @@
 	window.connectElgatoStreamDeckSocket = function (port, uuid, registerEvent, info, actionInfo) {
 		ctx = uuid;
 		try {
+			const inf = typeof info === "string" ? JSON.parse(info) : info;
+			const guess = toLang(navigator.language) || toLang(inf && inf.application && inf.application.language);
+			if (guess) state.lang = state.autoLang = guess;
+		} catch (e) { /* ignore */ }
+		try {
 			const ai = typeof actionInfo === "string" ? JSON.parse(actionInfo) : actionInfo;
 			actionUUID = ai.action;
 			state.settings = Object.assign({}, DEFAULTS, (ai.payload && ai.payload.settings) || {});
 		} catch (e) {
 			state.settings = Object.assign({}, DEFAULTS);
 		}
-		renderAll();
+		applyI18n();
 
 		ws = new WebSocket("ws://127.0.0.1:" + port);
 		ws.onopen = () => {
@@ -91,8 +134,14 @@
 		switch (p.type) {
 			case "env":
 				state.home = p.home || "";
-				renderApp();
-				renderPaths();
+				if (p.lang) {
+					state.autoLang = p.autoLang || state.autoLang;
+					state.langPref = p.langPref || "auto";
+					state.lang = p.lang;
+					applyI18n();
+				} else {
+					renderAll();
+				}
 				break;
 			case "apps":
 				state.apps = p.apps || [];
@@ -132,7 +181,7 @@
 			case "error":
 				if (p.cmd === "pick") ["folder", "file", "app"].forEach((k) => setBusy(k, false));
 				if (p.cmd === "run") setTestBusy(false);
-				toast("Erro: " + p.message, "err");
+				toast(t("error", { msg: p.message }), "err");
 				break;
 		}
 	}
@@ -194,8 +243,8 @@
 			iconBox.appendChild(iconNode({ name, path: s.appPath }));
 		} else {
 			btn.classList.add("is-empty");
-			$("appName").textContent = "Escolher programa…";
-			$("appSub").textContent = "Clique para ver os apps instalados";
+			$("appName").textContent = t("chooseApp");
+			$("appSub").textContent = t("chooseAppSub");
 			const ph = el("span", "avatar placeholder", '<svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/></svg>');
 			iconBox.appendChild(ph);
 		}
@@ -255,7 +304,7 @@
 		}
 		const list = filteredApps();
 		if (!list.length) {
-			ul.appendChild(el("li", "msg", "Nenhum app encontrado.<br>Use “Outro app no Finder…”"));
+			ul.appendChild(el("li", "msg", t("noApps")));
 			return;
 		}
 		if (state.active >= list.length) state.active = list.length - 1;
@@ -352,9 +401,9 @@
 			renderPaths();
 			renderOptions();
 			checkPaths();
-			toast(added === 1 ? "1 item adicionado" : added + " itens adicionados", "ok");
+			toast(added === 1 ? t("addedOne") : t("addedMany", { n: added }), "ok");
 		} else if (list.length) {
-			toast("Esse caminho já está na lista");
+			toast(t("duplicate"));
 		}
 	}
 
@@ -382,7 +431,7 @@
 		const ul = $("pathList");
 		ul.innerHTML = "";
 		$("pathEmpty").hidden = paths.length > 0;
-		$("pathCount").textContent = paths.length ? paths.length + (paths.length === 1 ? " item" : " itens") : "";
+		$("pathCount").textContent = paths.length ? (paths.length === 1 ? t("itemOne") : t("itemMany", { n: paths.length })) : "";
 
 		paths.forEach((p, i) => {
 			const st = state.pathStatus[p];
@@ -399,23 +448,23 @@
 
 			const txt = el("span", "path-text");
 			txt.appendChild(el("span", "path-name", esc(name)));
-			txt.appendChild(el("span", "path-dir", missing ? "Não encontrado" : "‎" + esc(tilde(dir))));
+			txt.appendChild(el("span", "path-dir", missing ? esc(t("notFound")) : "‎" + esc(tilde(dir))));
 			li.appendChild(txt);
 
 			const acts = el("span", "path-actions");
 			const up = el("button", "icon-btn", '<svg viewBox="0 0 16 16"><path d="M4 10l4-4 4 4"/></svg>');
 			up.type = "button";
-			up.title = "Subir";
+			up.title = t("up");
 			up.disabled = i === 0;
 			up.onclick = () => movePath(i, i - 1);
 			const down = el("button", "icon-btn", '<svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>');
 			down.type = "button";
-			down.title = "Descer";
+			down.title = t("down");
 			down.disabled = i === paths.length - 1;
 			down.onclick = () => movePath(i, i + 1);
 			const del = el("button", "icon-btn del", '<svg viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>');
 			del.type = "button";
-			del.title = "Remover";
+			del.title = t("remove");
 			del.onclick = () => removePath(i);
 			if (paths.length > 1) {
 				acts.appendChild(up);
@@ -471,10 +520,10 @@
 
 		const hint = $("niHint");
 		if (state.niAuto) {
-			hint.textContent = s.newInstance ? "Ativado automaticamente (app Electron)" : "Desativado automaticamente (app nativo)";
+			hint.textContent = s.newInstance ? t("niAutoOn") : t("niAutoOff");
 			hint.classList.add("auto");
 		} else {
-			hint.textContent = "Ideal para VS Code, Cursor, Antigravity";
+			hint.textContent = t("niHint");
 			hint.classList.remove("auto");
 		}
 		renderPreview();
@@ -487,7 +536,7 @@
 		const s = S();
 		const pre = $("cmdPreview");
 		if (!s.appPath) {
-			pre.textContent = "# escolha um programa";
+			pre.textContent = t("cmdNoApp");
 			return;
 		}
 		const app = shq(s.appPath);
@@ -530,19 +579,12 @@
 		if (!b) return;
 		b.classList.toggle("busy", on);
 		const span = b.querySelector("span");
-		if (span) {
-			if (on) {
-				span.dataset.label = span.dataset.label || span.textContent;
-				span.textContent = "Finder…";
-			} else if (span.dataset.label) {
-				span.textContent = span.dataset.label;
-			}
-		}
+		if (span) span.textContent = on ? t("finderBusy") : t(span.dataset.i18n);
 	}
 	function setTestBusy(on) {
 		const b = $("testBtn");
 		b.classList.toggle("busy", on);
-		b.querySelector("span").textContent = on ? "Abrindo…" : "Testar agora";
+		b.querySelector("span").textContent = on ? t("testing") : t("test");
 	}
 
 	function lastDir() {
@@ -640,7 +682,7 @@
 		});
 		$("testBtn").addEventListener("click", () => {
 			if (!S().appPath) {
-				toast("Escolha um programa primeiro", "err");
+				toast(t("chooseFirst"), "err");
 				openPop();
 				return;
 			}
@@ -663,11 +705,16 @@
 			if (uris) uris.split(/\r?\n/).filter((u) => u && !u.startsWith("#")).forEach((u) => out.push(u));
 			if (!out.length) for (const f of e.dataTransfer.files || []) if (f.path) out.push(f.path);
 			if (out.length) addPaths(out);
-			else toast("Não deu para ler o caminho — use o botão Pastas");
+			else toast(t("dropFail"));
 		});
 
-		renderAll();
+		$("langSel").addEventListener("change", (e) => {
+			setLang(e.target.value);
+			toPlugin({ cmd: "setLanguage", lang: state.langPref });
+		});
+
+		if (!ctx) applyI18n();
 	});
 
-	window.__openWithPI = { state, onPluginMessage }; // para testes
+	window.__openWithPI = { state, onPluginMessage, t }; // para testes
 })();

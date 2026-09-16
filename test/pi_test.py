@@ -34,7 +34,8 @@ class FakeWS {
     const reply = (payload, delay) => setTimeout(()=> this.onmessage && this.onmessage({data: JSON.stringify({event:'sendToPropertyInspector', payload})}), delay||20);
     if (m.event !== 'sendToPlugin') return;
     const p = m.payload, M = window.__mock;
-    if (p.cmd==='hello') reply({type:'env', home: M.home});
+    if (p.cmd==='hello') reply({type:'env', home: M.home, lang: 'pt', langPref: 'auto', autoLang: 'pt'});
+    if (p.cmd==='setLanguage') reply({type:'env', home: M.home, lang: p.lang==='auto' ? 'pt' : p.lang, langPref: p.lang, autoLang: 'pt'});
     if (p.cmd==='listApps') { reply({type:'apps', apps: M.apps}, 200); reply({type:'icons', icons: M.icons}, 400); }
     if (p.cmd==='appInfo') reply({type:'appInfo', app: M.apps.find(a=>a.path===p.appPath)||{name:'x',path:p.appPath}, icon: M.icons[p.appPath]||null});
     if (p.cmd==='pick' && p.kind==='folder') reply({type:'picked', kind:'folder', paths: M.pickFolders}, 300);
@@ -103,6 +104,27 @@ with sync_playwright() as p:
     assert any(m['event']=='sendToPlugin' and m['payload']['cmd']=='run' for m in sent)
     print('preview:\n' + pg.inner_text('#cmdPreview'))
     print('busy label:', busy)
+
+    # i18n
+    assert pg.inner_text('#testBtn').strip() == 'Testar agora'
+    assert pg.eval_on_selector('#langSel', 'e => e.options[0].textContent') == 'Automático (Português)'
+    pg.select_option('#langSel', 'es'); pg.wait_for_timeout(200)
+    assert pg.inner_text('#testBtn').strip() == 'Probar ahora', pg.inner_text('#testBtn')
+    assert pg.inner_text('#pathCount') == '2 elementos'
+    assert any(m['event']=='sendToPlugin' and m['payload'].get('cmd')=='setLanguage' and m['payload']['lang']=='es' for m in pg.evaluate('window.__sent'))
+    pg.screenshot(path=OUT+'06_es.png', full_page=True)
+    pg.select_option('#langSel', 'en'); pg.wait_for_timeout(200)
+    assert pg.inner_text('#addFolders').strip() == 'Folders'
+    pg.click('#appBtn'); pg.wait_for_timeout(100); pg.fill('#appSearch', 'zzz'); pg.wait_for_timeout(100)
+    assert 'No apps found' in pg.inner_text('#appList')
+    pg.keyboard.press('Escape')
+    pg.screenshot(path=OUT+'07_en.png', full_page=True)
+    # untranslated leftovers (Portuguese words) in EN mode
+    body = pg.inner_text('body')
+    for w in ['Pastas','Abrir','Programa','Testar','Nenhum','Intervalo','Caminho']:
+        assert w not in body, (w, body)
+    pg.select_option('#langSel', 'auto'); pg.wait_for_timeout(200)
+    assert pg.inner_text('#testBtn').strip() == 'Testar agora'
 
     # narrow width
     pg.set_viewport_size({'width': 290, 'height': 760}); pg.wait_for_timeout(100)

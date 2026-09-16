@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { type Lang, tr } from "./i18n";
+
 /** Pasta raiz do plugin (…/com.fernandoschuab.openwith.sdPlugin). */
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPTS_DIR = path.join(PLUGIN_DIR, "scripts");
@@ -106,14 +108,14 @@ export async function openItems(opts: OpenOptions): Promise<{ missing: string[];
 export type PickKind = "folder" | "file" | "app";
 let picking = false;
 
-export async function pick(kind: PickKind, multiple: boolean, defaultLocation?: string): Promise<string[]> {
+export async function pick(kind: PickKind, multiple: boolean, defaultLocation?: string, lang: Lang = "en"): Promise<string[]> {
 	if (picking) return [];
 	picking = true;
 	try {
 		const prompts: Record<PickKind, string> = {
-			folder: multiple ? "Escolha uma ou mais pastas" : "Escolha uma pasta",
-			file: multiple ? "Escolha um ou mais arquivos" : "Escolha um arquivo",
-			app: "Escolha o programa",
+			folder: tr(lang, multiple ? "pickFolders" : "pickFolder"),
+			file: tr(lang, multiple ? "pickFiles" : "pickFile"),
+			app: tr(lang, "pickApp"),
 		};
 		let loc = defaultLocation ? normalizePath(defaultLocation) : undefined;
 		if (loc && existsSync(loc) && !statSync(loc).isDirectory()) loc = path.dirname(loc);
@@ -121,7 +123,7 @@ export async function pick(kind: PickKind, multiple: boolean, defaultLocation?: 
 		const arg = JSON.stringify({ kind, multiple, prompt: prompts[kind], defaultLocation: loc });
 		const out = await run("/usr/bin/osascript", ["-l", "JavaScript", path.join(SCRIPTS_DIR, "pick.js"), arg]);
 		const res = JSON.parse(out.trim()) as { ok: boolean; paths?: string[]; error?: string };
-		if (!res.ok) throw new Error(res.error ?? "Falha no seletor");
+		if (!res.ok) throw new Error(res.error ?? "Picker failed");
 		return (res.paths ?? []).map(normalizePath);
 	} finally {
 		picking = false;

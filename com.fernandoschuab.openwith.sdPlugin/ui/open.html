@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 	<meta charset="utf-8" />
-	<title>Abrir Com</title>
+	<title>Open With</title>
 	<link rel="stylesheet" href="open.css" />
 </head>
 <body>
@@ -10,14 +10,14 @@
 		<!-- Programa -->
 		<section class="block">
 			<div class="block-head">
-				<span class="label">Programa</span>
+				<span class="label" data-i18n="program"></span>
 			</div>
 
 			<button id="appBtn" class="app-select" type="button" aria-haspopup="listbox" aria-expanded="false">
 				<span id="appIcon" class="app-icon"></span>
 				<span class="app-text">
-					<span id="appName" class="app-name">Escolher programa…</span>
-					<span id="appSub" class="app-sub">Clique para ver os apps instalados</span>
+					<span id="appName" class="app-name"></span>
+					<span id="appSub" class="app-sub"></span>
 				</span>
 				<svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
 			</button>
@@ -25,15 +25,15 @@
 			<div id="appPop" class="app-pop" hidden>
 				<div class="search">
 					<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" /></svg>
-					<input id="appSearch" type="text" placeholder="Buscar app…" autocomplete="off" spellcheck="false" />
-					<button id="appReload" class="icon-btn" type="button" title="Recarregar lista">
+					<input id="appSearch" type="text" data-i18n-ph="searchApp" autocomplete="off" spellcheck="false" />
+					<button id="appReload" class="icon-btn" type="button" data-i18n-title="reloadList">
 						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" /></svg>
 					</button>
 				</div>
 				<ul id="appList" class="app-list" role="listbox"></ul>
 				<button id="appOther" class="pop-footer" type="button">
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z" /></svg>
-					Outro app no Finder…
+					<span data-i18n="otherApp"></span>
 				</button>
 			</div>
 		</section>
@@ -41,7 +41,7 @@
 		<!-- Pastas -->
 		<section class="block">
 			<div class="block-head">
-				<span class="label">Pastas e arquivos</span>
+				<span class="label" data-i18n="itemsTitle"></span>
 				<span id="pathCount" class="count"></span>
 			</div>
 
@@ -49,43 +49,43 @@
 
 			<div id="pathEmpty" class="empty">
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" /></svg>
-				<span>Nenhuma pasta ainda.<br />Sem itens, a tecla só abre o programa.</span>
+				<span data-i18n-html="emptyText"></span>
 			</div>
 
 			<div class="btn-row">
 				<button id="addFolders" class="btn" type="button">
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
-					<span>Pastas</span>
+					<span data-i18n="folders"></span>
 				</button>
 				<button id="addFiles" class="btn" type="button">
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
-					<span>Arquivos</span>
+					<span data-i18n="files"></span>
 				</button>
-				<button id="addManual" class="btn btn-ghost" type="button" title="Digitar ou colar um caminho">
+				<button id="addManual" class="btn btn-ghost" type="button" data-i18n-title="pathTitle">
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11l6-6M6.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9.5 11.5l-1 1A2.5 2.5 0 0 1 5 9l1-1" /></svg>
-					<span>Caminho</span>
+					<span data-i18n="path"></span>
 				</button>
 			</div>
 
 			<form id="manualRow" class="manual" hidden>
-				<input id="manualInput" type="text" placeholder="~/Projetos/minha-pasta" spellcheck="false" autocomplete="off" />
-				<button class="btn btn-primary" type="submit">Adicionar</button>
+				<input id="manualInput" type="text" data-i18n-ph="pathPh" spellcheck="false" autocomplete="off" />
+				<button class="btn btn-primary" type="submit" data-i18n="add"></button>
 			</form>
 		</section>
 
 		<!-- Opções -->
 		<section class="block">
-			<div class="block-head"><span class="label">Como abrir</span></div>
+			<div class="block-head"><span class="label" data-i18n="howToOpen"></span></div>
 
 			<div id="modeSeg" class="seg" role="radiogroup">
-				<button type="button" role="radio" data-mode="separate">Uma janela por item</button>
-				<button type="button" role="radio" data-mode="together">Tudo de uma vez</button>
+				<button type="button" role="radio" data-mode="separate" data-i18n="modeSeparate"></button>
+				<button type="button" role="radio" data-mode="together" data-i18n="modeTogether"></button>
 			</div>
 
 			<label class="opt" id="delayOpt">
 				<span class="opt-text">
-					<span class="opt-title">Intervalo entre itens</span>
-					<span class="opt-sub">Espera antes de abrir o próximo</span>
+					<span class="opt-title" data-i18n="delayTitle"></span>
+					<span class="opt-sub" data-i18n="delaySub"></span>
 				</span>
 				<span class="range-wrap">
 					<input id="delay" type="range" min="0" max="3000" step="100" />
@@ -95,16 +95,16 @@
 
 			<label class="opt">
 				<span class="opt-text">
-					<span class="opt-title">Nova instância <code>-n --args</code></span>
-					<span class="opt-sub" id="niHint">Ideal para VS Code, Cursor, Antigravity</span>
+					<span class="opt-title"><span data-i18n="niTitle"></span> <code>-n --args</code></span>
+					<span class="opt-sub" id="niHint"></span>
 				</span>
 				<span class="switch"><input id="newInstance" type="checkbox" /><i></i></span>
 			</label>
 
 			<label class="opt">
 				<span class="opt-text">
-					<span class="opt-title">Ícone do app na tecla</span>
-					<span class="opt-sub">Desligue para usar sua própria imagem</span>
+					<span class="opt-title" data-i18n="iconTitle"></span>
+					<span class="opt-sub" data-i18n="iconSub"></span>
 				</span>
 				<span class="switch"><input id="useAppIcon" type="checkbox" /><i></i></span>
 			</label>
@@ -112,16 +112,31 @@
 
 		<button id="testBtn" class="btn btn-primary btn-wide" type="button">
 			<svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M5 3.5v9l7.5-4.5z" /></svg>
-			<span>Testar agora</span>
+			<span data-i18n="test"></span>
 		</button>
 
 		<details class="preview">
-			<summary>Comando equivalente</summary>
+			<summary data-i18n="cmdPreview"></summary>
 			<pre id="cmdPreview"></pre>
 		</details>
 
+		<footer class="lang-row">
+			<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" /><path d="M2 8h12M8 2c1.8 1.8 2.6 3.9 2.6 6S9.8 12.2 8 14M8 2C6.2 3.8 5.4 5.9 5.4 8s.8 4.2 2.6 6" /></svg>
+			<label for="langSel" data-i18n="language"></label>
+			<span class="select-wrap">
+				<select id="langSel">
+					<option value="auto"></option>
+					<option value="pt">Português</option>
+					<option value="en">English</option>
+					<option value="es">Español</option>
+				</select>
+				<svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+			</span>
+		</footer>
+
 		<div id="toast" class="toast" role="status" hidden></div>
 	</main>
+	<script src="i18n.js"></script>
 	<script src="open.js"></script>
 </body>
 </html>
