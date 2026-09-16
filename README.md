@@ -51,6 +51,26 @@ Para adicionar um idioma, siga três passos:
 - **Um app aparece com uma letra no lugar do ícone:** o macOS não forneceu o ícone. É só visual; a ação funciona normalmente.
 - **Cache de ícones:** `~/Library/Caches/com.fernandoschuab.openwith/`. Apague para gerar os ícones de novo.
 
+## Publicação (Elgato Marketplace)
+
+Imagens prontas em `marketing/out/`:
+
+| Arquivo | Uso no Maker Console |
+|---|---|
+| `thumbnail-1920x960.png` | Thumbnail (1920×960, texto em inglês) |
+| `app-icon-288.png` | App icon (288×288) |
+| `plugin-icon-512.png` / `logo.svg` | Logo em alta resolução |
+
+O ícone do plugin dentro do pacote fica em `imgs/plugin/marketplace.png` (256×256) e `@2x` (512×512).
+
+Para regenerar as imagens, edite os arquivos `.html`/`.svg` em `marketing/` e rode:
+
+```bash
+python3 marketing/render.py thumb.html out/thumbnail-1920x960.png 1920 960
+```
+
+Esse comando precisa do Playwright para Python.
+
 ## Desenvolvimento
 
 ```bash
