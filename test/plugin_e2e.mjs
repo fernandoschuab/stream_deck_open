@@ -3,8 +3,9 @@ import { spawn } from "node:child_process";
 import { WebSocketServer } from "ws";
 import path from "node:path";
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 
-const SDP = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../com.fernandoschuab.openwith.sdPlugin");
+const SDP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../com.fernandoschuab.openwith.sdPlugin");
 // E2E_PLATFORM=mac|windows força a implementação; E2E_EXPECT_LANG confere o idioma detectado.
 const PLATFORM = process.env.E2E_PLATFORM || "";
 const EXPECT = process.env.E2E_EXPECT_LANG || "";
