@@ -11,7 +11,7 @@ import streamDeck, {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { letterIcon } from "../lib/common";
+import { letterIcon, sleep } from "../lib/common";
 import { sendToPI } from "../lib/piChannel";
 import { type Lang, type LangPref, resolveLang } from "../lib/i18n";
 import { type PickKind, platform } from "../lib/platform";
@@ -29,7 +29,7 @@ export type OpenSettings = {
 type PiMessage =
 	| { cmd: "hello" }
 	| { cmd: "setLanguage"; lang: LangPref }
-	| { cmd: "listApps"; force?: boolean }
+	| { cmd: "listApps"; force?: boolean; icons?: boolean }
 	| { cmd: "pick"; kind: PickKind; multiple?: boolean; defaultLocation?: string; reqId?: string }
 	| { cmd: "checkPaths"; paths: string[] }
 	| { cmd: "appInfo"; appPath: string }
@@ -74,8 +74,35 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 	}
 
 	override async onPropertyInspectorDidAppear(ev: PropertyInspectorDidAppearEvent<OpenSettings>): Promise<void> {
-		await this.loadLanguage();
-		await sendToPI(ev.action.id, this.envPayload());
+		await this.sendEnv(ev.action.id);
+	}
+
+	/**
+	 * Manda o ambiente assim que possível: a interface fica esperando por ele para
+	 * pedir ícone e conferir as pastas. Se o idioma demorar (PowerShell no Windows),
+	 * envia com o que já se sabe e repete quando o idioma chegar.
+	 */
+	private async sendEnv(context: string): Promise<void> {
+		const ready = this.loadLanguage();
+		const inTime = await Promise.race([ready.then(() => true), sleep(400).then(() => false)]);
+		await sendToPI(context, this.envPayload());
+		if (!inTime) void ready.then(() => sendToPI(context, this.envPayload())).catch(() => undefined);
+	}
+
+	/** Aquece os caches (lista de apps e ícones) em segundo plano, logo após o plugin subir. */
+	async prewarm(): Promise<void> {
+		try {
+			const t0 = Date.now();
+			await this.loadLanguage();
+			const icons = (list: { path: string }[]) => platform.getIcons(list.map((a) => a.path), 64);
+			// Se a lista estava velha, a varredura nova também tem os ícones gerados.
+			const apps = await platform.listApps(false, this.lang, (updated) => void icons(updated));
+			const listed = Date.now() - t0;
+			await icons(apps);
+			log.info(`Prewarm: ${apps.length} apps (lista ${listed}ms, ícones ${Date.now() - t0 - listed}ms)`);
+		} catch (err) {
+			log.warn("Prewarm failed", err);
+		}
 	}
 
 	/** Carrega (uma vez) o idioma do macOS e a preferência salva nas configurações globais. */
@@ -177,6 +204,21 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 		if (this.appliedImage.get(act.id) === key) await act.setImage(img);
 	}
 
+	/** Ícones da lista de apps, em lotes, conforme ficam prontos. */
+	private async sendIcons(apps: { path: string }[], send: (p: JsonValue) => Promise<void>): Promise<void> {
+		const t0 = Date.now();
+		try {
+			const icons = await platform.getIcons(
+				apps.map((a) => a.path),
+				64,
+				(batch) => send({ type: "icons", icons: batch }),
+			);
+			log.info(`Ícones: ${Object.keys(icons).length}/${apps.length} em ${Date.now() - t0}ms`);
+		} catch (err) {
+			log.error("Icons", err);
+		}
+	}
+
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, OpenSettings>): Promise<void> {
 		const msg = ev.payload as PiMessage;
 		if (!msg || typeof msg !== "object" || !("cmd" in msg)) return;
@@ -186,8 +228,7 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 		try {
 			switch (msg.cmd) {
 				case "hello":
-					await this.loadLanguage();
-					await send(this.envPayload());
+					await this.sendEnv(context);
 					break;
 
 				case "setLanguage": {
@@ -199,14 +240,17 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 				}
 
 				case "listApps": {
+					const t0 = Date.now();
 					await this.loadLanguage();
-					const apps = await platform.listApps(!!msg.force, this.lang);
+					const wantIcons = msg.icons !== false;
+					// A lista velha vai na hora; se a nova varredura mudar algo, a interface recebe de novo.
+					const apps = await platform.listApps(!!msg.force, this.lang, (updated) => {
+						void send({ type: "apps", apps: updated });
+						if (wantIcons) void this.sendIcons(updated, send);
+					});
 					await send({ type: "apps", apps });
-					void platform.getIcons(
-						apps.map((a) => a.path),
-						64,
-						(icons) => send({ type: "icons", icons }),
-					).catch((e) => log.error("Icons", e));
+					log.info(`listApps: ${apps.length} apps em ${Date.now() - t0}ms (ícones: ${wantIcons ? "sim" : "não"})`);
+					if (wantIcons) void this.sendIcons(apps, send);
 					break;
 				}
 
@@ -240,7 +284,8 @@ export class OpenWith extends SingletonAction<OpenSettings> {
 
 				case "checkPaths": {
 					const status: Record<string, { exists: boolean; dir: boolean }> = {};
-					for (const p of msg.paths ?? []) status[p] = platform.pathKind(p);
+					// Em paralelo: um caminho de rede lento não pode segurar os outros.
+					await Promise.all((msg.paths ?? []).map(async (p) => (status[p] = await platform.pathKind(p))));
 					await send({ type: "pathStatus", status });
 					break;
 				}

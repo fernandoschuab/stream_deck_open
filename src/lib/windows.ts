@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, promises as fsp, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { createIconCache, run, SCRIPTS_DIR, sleep } from "./common";
+import { createAppCache, createIconCache, run, SCRIPTS_DIR, sleep } from "./common";
 import { type Lang, tr } from "./i18n";
 import type { AppInfo, OpenOptions, PickKind, PickResult, Platform } from "./types";
 
@@ -19,7 +19,9 @@ const POWERSHELL = w.join(SYSTEM_ROOT, "System32", "WindowsPowerShell", "v1.0", 
 const PS_SCRIPT = path.join(SCRIPTS_DIR, "win", "openwith.ps1");
 const LOCAL_APPDATA = process.env.LOCALAPPDATA || w.join(HOME, "AppData", "Local");
 // Fora do Windows (só em testes) usa o separador do sistema para não criar pastas com "\\" no nome.
-const ICON_CACHE = (process.platform === "win32" ? w : path).join(LOCAL_APPDATA, "com.fernandoschuab.openwith", "icons");
+const CACHE_DIR = (process.platform === "win32" ? w : path).join(LOCAL_APPDATA, "com.fernandoschuab.openwith");
+const ICON_CACHE = (process.platform === "win32" ? w : path).join(CACHE_DIR, "icons");
+const APPS_CACHE = (process.platform === "win32" ? w : path).join(CACHE_DIR, "apps.json");
 export const EXPLORER = w.join(SYSTEM_ROOT, "explorer.exe");
 
 /* ------------------------------------------------------------------ */
@@ -228,9 +230,7 @@ export function filterStartMenuApps(raw: { name: string; path: string }[]): { na
 	return out;
 }
 
-let appsCache: { at: number; lang: Lang; apps: AppInfo[] } | undefined;
-async function listApps(force: boolean, lang: Lang): Promise<AppInfo[]> {
-	if (!force && appsCache && appsCache.lang === lang && Date.now() - appsCache.at < 60_000) return appsCache.apps;
+async function scanApps(lang: string): Promise<AppInfo[]> {
 	let raw: { name: string; path: string }[] = [];
 	try {
 		const res = await ps<PsResult & { apps?: { name: string; path: string }[] }>("apps", {}, 45_000);
@@ -240,11 +240,12 @@ async function listApps(force: boolean, lang: Lang): Promise<AppInfo[]> {
 	}
 	const list = filterStartMenuApps(raw).filter((a) => a.path.toLowerCase() !== EXPLORER.toLowerCase());
 	const apps: AppInfo[] = list.map((a) => ({ name: a.name, path: a.path, electron: isElectron(a.path) }));
-	if (existsSync(EXPLORER)) apps.push({ name: tr(lang, "fileExplorer"), path: EXPLORER, electron: false });
+	if (existsSync(EXPLORER)) apps.push({ name: tr(lang as Lang, "fileExplorer"), path: EXPLORER, electron: false });
 	apps.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-	appsCache = { at: Date.now(), lang, apps };
 	return apps;
 }
+
+const listApps = createAppCache(APPS_CACHE, scanApps);
 
 /* ------------------------------------------------------------------ */
 /* Ícones e idioma                                                     */
@@ -255,7 +256,7 @@ const getIcons = createIconCache(
 	async (jobs) => {
 		await ps("icons", { jobs }, 90_000);
 	},
-	40,
+	{ chunkSize: 40 },
 );
 
 async function readSystemLanguage(): Promise<string | undefined> {
@@ -275,9 +276,9 @@ export const windowsPlatform: Platform = {
 	id: "windows",
 	home: HOME,
 	normalizePath: (p) => normalizePath(p),
-	pathKind(p) {
+	async pathKind(p) {
 		try {
-			const st = statSync(normalizePath(p));
+			const st = await fsp.stat(normalizePath(p));
 			return { exists: true, dir: st.isDirectory() };
 		} catch {
 			return { exists: false, dir: false };
@@ -287,7 +288,7 @@ export const windowsPlatform: Platform = {
 	appNameFromPath,
 	openItems,
 	pick,
-	listApps,
+	listApps: (force, lang, onUpdate) => listApps(force, lang, onUpdate),
 	getIcons,
 	readSystemLanguage,
 };

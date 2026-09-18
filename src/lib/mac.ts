@@ -2,7 +2,7 @@ import { existsSync, promises as fs, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { createIconCache, type IconJob, readDataUrl, run, SCRIPTS_DIR, sleep } from "./common";
+import { createAppCache, createIconCache, exists, type IconJob, readDataUrl, run, SCRIPTS_DIR, sleep } from "./common";
 import { tr } from "./i18n";
 import type { AppInfo, OpenOptions, PickKind, Platform } from "./types";
 
@@ -10,7 +10,9 @@ import type { AppInfo, OpenOptions, PickKind, Platform } from "./types";
 
 const HOME = os.homedir();
 const MAC_SCRIPTS = SCRIPTS_DIR; // pick.js e icons.js ficam na raiz de scripts/
-const ICON_CACHE = path.join(HOME, "Library", "Caches", "com.fernandoschuab.openwith", "icons");
+const CACHE_DIR = path.join(HOME, "Library", "Caches", "com.fernandoschuab.openwith");
+const ICON_CACHE = path.join(CACHE_DIR, "icons");
+const APPS_CACHE = path.join(CACHE_DIR, "apps.json");
 
 /** Expande "~", aceita "Working\ Files" colado do Terminal e remove barra final. */
 export function normalizePath(p: string): string {
@@ -95,6 +97,7 @@ async function pick(kind: PickKind, multiple: boolean, defaultLocation: string |
 
 const APP_ROOTS = ["/Applications", path.join(HOME, "Applications"), "/System/Applications", "/System/Applications/Utilities"];
 
+/** Varre uma pasta em busca de .app (as subpastas em paralelo). */
 async function scanDir(dir: string, depth: number, found: Map<string, AppInfo>): Promise<void> {
 	let entries: import("node:fs").Dirent[];
 	try {
@@ -102,29 +105,32 @@ async function scanDir(dir: string, depth: number, found: Map<string, AppInfo>):
 	} catch {
 		return;
 	}
+	const deeper: Promise<void>[] = [];
 	for (const e of entries) {
 		if (e.name.startsWith(".")) continue;
 		const full = path.join(dir, e.name);
 		if (e.name.toLowerCase().endsWith(".app")) {
 			const name = appNameFromPath(full);
-			if (!found.has(name.toLowerCase())) found.set(name.toLowerCase(), { name, path: full, electron: isElectron(full) });
+			if (!found.has(name.toLowerCase())) found.set(name.toLowerCase(), { name, path: full, electron: false });
 		} else if (depth > 0 && (e.isDirectory() || e.isSymbolicLink())) {
-			await scanDir(full, depth - 1, found);
+			deeper.push(scanDir(full, depth - 1, found));
 		}
 	}
+	await Promise.all(deeper);
 }
 
-let appsCache: { at: number; apps: AppInfo[] } | undefined;
-async function listApps(force: boolean): Promise<AppInfo[]> {
-	if (!force && appsCache && Date.now() - appsCache.at < 60_000) return appsCache.apps;
+async function scanApps(): Promise<AppInfo[]> {
 	const found = new Map<string, AppInfo>();
 	const finder = "/System/Library/CoreServices/Finder.app";
-	if (existsSync(finder)) found.set("finder", { name: "Finder", path: finder, electron: false });
-	for (const root of APP_ROOTS) await scanDir(root, root === "/Applications" ? 2 : 1, found);
+	if (await exists(finder)) found.set("finder", { name: "Finder", path: finder, electron: false });
+	await Promise.all(APP_ROOTS.map((root) => scanDir(root, root === "/Applications" ? 2 : 1, found)));
 	const apps = [...found.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-	appsCache = { at: Date.now(), apps };
+	// A marca de Electron custa um acesso a disco por app: em paralelo, e só uma vez por varredura.
+	await Promise.all(apps.map(async (a) => (a.electron = await exists(path.join(a.path, "Contents", "Frameworks", "Electron Framework.framework")))));
 	return apps;
 }
+
+const listApps = createAppCache(APPS_CACHE, scanApps);
 
 /** Fallback: converte o .icns do bundle com `sips`. */
 async function sipsFallback(job: IconJob): Promise<void> {
@@ -168,9 +174,9 @@ export const macPlatform: Platform = {
 	id: "mac",
 	home: HOME,
 	normalizePath,
-	pathKind(p) {
+	async pathKind(p) {
 		try {
-			const st = statSync(normalizePath(p));
+			const st = await fs.stat(normalizePath(p));
 			return { exists: true, dir: st.isDirectory() && !/\.app$/i.test(p) };
 		} catch {
 			return { exists: false, dir: false };
@@ -180,7 +186,7 @@ export const macPlatform: Platform = {
 	appNameFromPath,
 	openItems,
 	pick,
-	listApps: (force) => listApps(force),
+	listApps: (force, lang, onUpdate) => listApps(force, lang, onUpdate),
 	getIcons,
 	readSystemLanguage,
 };

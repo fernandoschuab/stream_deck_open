@@ -2,7 +2,7 @@
 
 Abre **uma ou várias pastas/arquivos** no programa que você escolher (Antigravity, VS Code, Cursor, Finder, Explorador de Arquivos…) direto do Stream Deck, sem Terminal e sem digitar comando.
 
-**Versão atual: 1.1.1** — veja o [histórico de versões](#versões).
+**Versão atual: 1.1.2** — veja o [histórico de versões](#versões).
 
 <img src="docs/preview.png" width="260"> <img src="docs/preview-en.png" width="260"> <img src="docs/preview-es.png" width="260">
 
@@ -57,7 +57,7 @@ Para adicionar um idioma, siga três passos:
 
 - **Logs:** `~/Library/Application Support/com.elgato.StreamDeck/Plugins/com.fernandoschuab.openwith.sdPlugin/logs/`
 - **O seletor do Finder abriu atrás de outras janelas:** procure-o com ⌘-Tab (o processo se chama *osascript*).
-- **Cache de ícones:** `~/Library/Caches/com.fernandoschuab.openwith/`. Apague para gerar os ícones de novo.
+- **Cache de ícones e da lista de apps:** `~/Library/Caches/com.fernandoschuab.openwith/` (`icons/` e `apps.json`). Apague para refazer tudo. A lista se atualiza sozinha a cada 10 minutos; o botão ↻ do seletor atualiza na hora.
 
 **Windows**
 
@@ -132,6 +132,7 @@ Para mudar a versão, altere `Version` em `com.fernandoschuab.openwith.sdPlugin/
 
 ## Versões
 
+- **1.1.2** — Mais rápido para carregar os dados da tela de configuração: a lista de programas fica guardada em disco e é atualizada em segundo plano; os ícones de várias teclas são gerados numa chamada só (antes era uma por tecla, todas ao mesmo tempo); a lista de programas é pedida assim que a tela abre e os ícones chegam em lotes; o plugin prepara tudo 5 segundos depois de iniciar. O idioma não segura mais o primeiro envio para a tela.
 - **1.1.1** — Correção: ao copiar e colar uma tecla, a tela de configuração da tecla colada não recebia respostas do plugin (sem idioma, ícones, lista de apps e seletor de pastas). Agora as respostas vão direto para a tecla que perguntou, e os pedidos feitos antes de o plugin responder ficam numa fila.
 - **1.1.0** — Suporte a **Windows 10/11** no mesmo plugin: lista de apps do Menu Iniciar, seletor do Explorador com várias pastas, ícones do sistema e idioma do Windows. Correção: a tela agora recebe o idioma do sistema mesmo quando abre antes do plugin estar pronto.
 - **1.0.0** — Primeira versão (macOS): várias pastas por tecla, seletor de apps com ícones, português/inglês/espanhol.

@@ -23,6 +23,7 @@
 		apps: [],
 		appsLoaded: false,
 		appsLoading: false,
+		iconsAsked: false,
 		icons: {},
 		pathStatus: {},
 		filter: "",
@@ -153,6 +154,9 @@
 				state.gotGlobal = true;
 				setLang(g.language);
 			} else if (msg.event === "sendToPropertyInspector") {
+				// Qualquer resposta prova que o plugin está atendendo esta tecla.
+				state.gotEnv = true;
+				flushQueue();
 				onPluginMessage(msg.payload || {});
 			}
 		};
@@ -202,11 +206,14 @@
 				}
 				setLang(state.gotGlobal ? state.langPref : p.langPref || state.langPref);
 				flushQueue();
+				// Adianta a lista de programas (sem ícones): ao abrir o seletor, ela já está pronta.
+				if (!state.appsLoaded && !state.appsLoading) loadApps(false, false);
 				break;
 			case "apps":
 				state.apps = p.apps || [];
 				state.appsLoaded = true;
 				state.appsLoading = false;
+				clearTimeout(appsTimer);
 				$("appReload").classList.remove("spin");
 				renderAppList();
 				break;
@@ -328,7 +335,7 @@
 		$("appBtn").setAttribute("aria-expanded", "true");
 		state.filter = "";
 		$("appSearch").value = "";
-		if (!state.appsLoaded && !state.appsLoading) loadApps(false);
+		if (!state.iconsAsked) loadApps(false, true);
 		renderAppList(true);
 		setTimeout(() => $("appSearch").focus(), 0);
 	}
@@ -337,10 +344,26 @@
 		$("appBtn").setAttribute("aria-expanded", "false");
 		if (focusBtn) $("appBtn").focus();
 	}
-	function loadApps(force) {
+	let appsTimer = 0;
+	let appsRetried = false;
+	function loadApps(force, withIcons) {
 		state.appsLoading = true;
+		if (withIcons !== false) state.iconsAsked = true;
 		$("appReload").classList.add("spin");
-		toPlugin({ cmd: "listApps", force: !!force });
+		toPlugin({ cmd: "listApps", force: !!force, icons: withIcons !== false });
+		clearTimeout(appsTimer);
+		appsTimer = setTimeout(() => {
+			if (state.appsLoaded) return;
+			state.appsLoading = false;
+			$("appReload").classList.remove("spin");
+			if (!appsRetried) {
+				appsRetried = true;
+				loadApps(false, withIcons);
+			} else {
+				toast(t("noApps"), "err");
+				renderAppList();
+			}
+		}, 15000);
 		renderAppList();
 	}
 
@@ -714,7 +737,7 @@
 			else if (e.key === "Enter") { e.preventDefault(); if (list[state.active]) chooseApp(list[state.active]); }
 			else if (e.key === "Escape") { e.preventDefault(); closePop(true); }
 		});
-		$("appReload").addEventListener("click", () => loadApps(true));
+		$("appReload").addEventListener("click", () => loadApps(true, true));
 		$("appOther").addEventListener("click", () => {
 			setBusy("app", true);
 			toPlugin({ cmd: "pick", kind: "app", multiple: false });

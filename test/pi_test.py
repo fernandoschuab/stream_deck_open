@@ -67,8 +67,16 @@ with sync_playwright() as p:
     print('early label (before plugin reply):', early)
     pg.screenshot(path=OUT+'01_empty.png')
 
-    # open app list
-    pg.click('#appBtn'); pg.wait_for_timeout(600)
+    # a lista de programas é pedida adiantada (sem ícones) assim que o plugin responde
+    pedidos = pg.evaluate("window.__sent.filter(m=>m.event==='sendToPlugin'&&m.payload.cmd==='listApps').map(m=>m.payload)")
+    assert pedidos and pedidos[0]['icons'] is False, pedidos
+    assert pg.evaluate('window.__openWithPI.state.appsLoaded') is True, 'lista deveria estar pronta antes de abrir o seletor'
+
+    # open app list: já abre preenchida e só agora pede os ícones
+    pg.click('#appBtn'); pg.wait_for_timeout(60)
+    assert pg.evaluate("document.querySelectorAll('#appList li[data-path]').length") == len(apps), 'o seletor deveria abrir com a lista pronta'
+    assert pg.evaluate("window.__sent.filter(m=>m.event==='sendToPlugin'&&m.payload.cmd==='listApps'&&m.payload.icons).length") == 1
+    pg.wait_for_timeout(600)
     pg.screenshot(path=OUT+'02_applist.png')
     pg.fill('#appSearch', 'anti'); pg.wait_for_timeout(100)
     pg.screenshot(path=OUT+'03_search.png')

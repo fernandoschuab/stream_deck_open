@@ -21,12 +21,13 @@ export interface Platform {
 	readonly id: PlatformId;
 	readonly home: string;
 	normalizePath(p: string): string;
-	pathKind(p: string): PathKind;
+	pathKind(p: string): Promise<PathKind>;
 	isElectron(appPath: string): boolean;
 	appNameFromPath(appPath: string): string;
 	openItems(opts: OpenOptions): Promise<OpenResult>;
 	pick(kind: PickKind, multiple: boolean, defaultLocation: string | undefined, lang: Lang): Promise<PickResult>;
-	listApps(force: boolean, lang: Lang): Promise<AppInfo[]>;
+	/** `onUpdate` é chamado se a lista devolvida estava velha e a nova ficou diferente. */
+	listApps(force: boolean, lang: Lang, onUpdate?: (apps: AppInfo[]) => void): Promise<AppInfo[]>;
 	getIcons(
 		appPaths: string[],
 		size: number,
